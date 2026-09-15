@@ -1,0 +1,5 @@
+u-boot-mixtile-rk35xx-vendor (2026.07-1) UNRELEASED; urgency=medium
+
+  * Placeholder. Rewritten by scripts/build-u-boot.sh with the real version.
+
+ -- Mixtile <support@mixtile.com>  Thu, 03 Sep 2026 00:00:00 +0000

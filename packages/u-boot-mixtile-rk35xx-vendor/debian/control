@@ -1,0 +1,55 @@
+Source: u-boot-mixtile-rk35xx-vendor
+Section: admin
+Priority: optional
+Maintainer: Mixtile <support@mixtile.com>
+Standards-Version: 4.7.0
+Build-Depends: debhelper-compat (= 13),
+               bc,
+               bison,
+               device-tree-compiler,
+               flex,
+               gcc-aarch64-linux-gnu,
+               libgnutls28-dev,
+               libssl-dev,
+               make,
+               python3,
+               python3-pyelftools,
+               python3-setuptools,
+               swig,
+               uuid-dev
+
+Package: u-boot-mixtile-blade3
+Architecture: arm64
+Provides: u-boot
+Conflicts: u-boot
+Replaces: u-boot
+Description: U-Boot bootloader for Mixtile Blade 3
+ Radxa vendor U-Boot (Rockchip RK3588) built for the Mixtile Blade 3, with the
+ Mixtile board device tree and power-delivery/MAC patches. The FIT generator
+ assembles U-Boot proper with the BL31 (ATF) blob into u-boot.itb, and mkimage
+ wraps the DDR init blob with SPL into idbloader.img -- the two files written
+ to the boot device at LBA 64 and LBA 16384.
+
+Package: u-boot-mixtile-edge2
+Architecture: arm64
+Provides: u-boot
+Conflicts: u-boot
+Replaces: u-boot
+Description: U-Boot bootloader for Mixtile Edge 2
+ Radxa vendor U-Boot (Rockchip RK3568) built for the Mixtile Edge 2, with the
+ Mixtile board device tree. The FIT generator assembles U-Boot proper with the
+ BL31 (ATF) blob into u-boot.itb, and mkimage wraps the DDR init blob with SPL
+ into idbloader.img -- the two files written to the boot device at LBA 64 and
+ LBA 16384.
+
+Package: u-boot-mixtile-core3588e
+Architecture: arm64
+Provides: u-boot
+Conflicts: u-boot
+Replaces: u-boot
+Description: U-Boot bootloader for Mixtile Core 3588E
+ Radxa vendor U-Boot (Rockchip RK3588) built for the Mixtile Core 3588E, with
+ the Mixtile board device tree. The FIT generator assembles U-Boot proper with
+ the BL31 (ATF) blob into u-boot.itb, and mkimage wraps the DDR init blob with
+ SPL into idbloader.img -- the two files written to the boot device at LBA 64
+ and LBA 16384.

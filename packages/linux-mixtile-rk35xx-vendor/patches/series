@@ -1,0 +1,5 @@
+# quilt series for the vendor kernel, applied by scripts/build-kernel.sh before
+# the config is merged -- a patch may add Kconfig symbols a fragment then sets.
+#
+# Empty: this line needs no patches today. Armbian carries only three files of
+# its own on top of the same branch, so the expected volume here is low.

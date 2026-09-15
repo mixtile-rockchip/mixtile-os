@@ -1,0 +1,223 @@
+name: Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      board:
+        description: Board (all = every board)
+        type: choice
+        default: all
+        options: [all, mixtile-blade3, mixtile-edge2, mixtile-core3588e]
+      suite:
+        description: Suite (all = every suite)
+        type: choice
+        default: all
+        options: [all, noble, resolute, bookworm, trixie]
+      flavor:
+        description: Flavor (all = every flavor)
+        type: choice
+        default: all
+        options: [all, server, desktop]
+
+run-name: Build
+
+permissions:
+  contents: read
+
+env:
+  # Single source for the build environment. Native runner, no container:
+  # the runner is a full VM with passwordless root, loop devices, mount and udev.
+  BUILD_DEPS: >-
+    ca-certificates curl wget git file xz-utils zstd bzip2 patch lsb-release
+    dctrl-tools mmdebstrap arch-test qemu-user-static binfmt-support
+    debian-archive-keyring ubuntu-keyring gpg gpg-agent dirmngr apt-utils
+    build-essential debhelper devscripts dpkg-dev fakeroot quilt
+    gcc-aarch64-linux-gnu bc bison flex libssl-dev libelf-dev dwarves kmod
+    cpio rsync python3 python3-dev python3-setuptools python3-pyelftools
+    python-is-python3 swig libpython3-dev u-boot-tools device-tree-compiler
+    libfdt-dev libgnutls28-dev uuid-dev parted fdisk gdisk dosfstools
+    e2fsprogs uuid-runtime util-linux udev
+
+jobs:
+  rootfs:
+    runs-on: ubuntu-24.04
+    name: Build rootfs
+    # Package installation runs under qemu emulation and is single-threaded,
+    # so a desktop rootfs is the longest stage in the pipeline.
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: ${{ inputs.suite == 'all' && fromJSON('["noble","resolute","bookworm","trixie"]') || fromJSON(format('["{0}"]', inputs.suite)) }}
+        flavor: ${{ inputs.flavor == 'all' && fromJSON('["server","desktop"]') || fromJSON(format('["{0}"]', inputs.flavor)) }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ${BUILD_DEPS}
+
+      # binfmt registration is host kernel state, not image content, and
+      # qemu-user-static only registers it as a side effect of being installed.
+      - name: Verify arm64 binfmt handler
+        run: |
+          set -eu
+          f=/proc/sys/fs/binfmt_misc/qemu-aarch64
+          [ -f "${f}" ] || { echo "Error: no qemu-aarch64 handler registered"; exit 1; }
+          cat "${f}"
+          grep -q '^enabled' "${f}" || { echo "Error: handler is not enabled"; exit 1; }
+          grep -q '^flags:' "${f}" || { echo "Error: handler reports no flags line"; exit 1; }
+          awk '/^flags:/ { if ($2 !~ /F/) { print "Error: flags " $2 " lack F (fix-binary)"; exit 1 } }' "${f}"
+          arch-test arm64
+
+      - name: Build rootfs
+        run: sudo ./build.sh --suite=${{ matrix.suite }} --flavor=${{ matrix.flavor }} --rootfs-only
+
+      # Board-independent, so one tarball serves every board of this suite/flavor.
+      - name: Upload rootfs tarball
+        uses: actions/upload-artifact@v7
+        with:
+          name: rootfs-${{ matrix.suite }}-${{ matrix.flavor }}
+          path: build/*.rootfs.tar.zst
+          if-no-files-found: error
+          compression-level: 0
+
+  kernel:
+    runs-on: ubuntu-24.04
+    name: Build kernel
+    timeout-minutes: 120
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ${BUILD_DEPS}
+
+      # bindeb-pkg output is distribution-agnostic and the tree is board-agnostic,
+      # so a single build serves every suite, flavor and board.
+      - name: Build kernel packages
+        run: sudo ./build.sh --kernel-only --kernel=vendor
+
+      # Same exclusions config-image.sh applies: -dbg is 120MB of symbols and
+      # linux-libc-dev would displace the archive's own.
+      - name: Upload kernel packages
+        uses: actions/upload-artifact@v7
+        with:
+          name: kernel-vendor
+          path: |
+            build/*.deb
+            !build/*-dbg_*.deb
+            !build/linux-libc-dev_*.deb
+          if-no-files-found: error
+          compression-level: 0
+
+  build:
+    runs-on: ubuntu-24.04
+    needs: [rootfs, kernel]
+    name: Build image
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        board: ${{ inputs.board == 'all' && fromJSON('["mixtile-blade3","mixtile-edge2","mixtile-core3588e"]') || fromJSON(format('["{0}"]', inputs.board)) }}
+        suite: ${{ inputs.suite == 'all' && fromJSON('["noble","resolute","bookworm","trixie"]') || fromJSON(format('["{0}"]', inputs.suite)) }}
+        flavor: ${{ inputs.flavor == 'all' && fromJSON('["server","desktop"]') || fromJSON(format('["{0}"]', inputs.flavor)) }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ${BUILD_DEPS}
+
+      - name: Verify arm64 binfmt handler
+        run: |
+          set -eu
+          f=/proc/sys/fs/binfmt_misc/qemu-aarch64
+          [ -f "${f}" ] || { echo "Error: no qemu-aarch64 handler registered"; exit 1; }
+          grep -q '^enabled' "${f}" || { echo "Error: handler is not enabled"; exit 1; }
+          grep -q '^flags:' "${f}" || { echo "Error: handler reports no flags line"; exit 1; }
+          awk '/^flags:/ { if ($2 !~ /F/) { print "Error: flags " $2 " lack F (fix-binary)"; exit 1 } }' "${f}"
+
+      # Restoring these into build/ makes the kernel and rootfs stages skip
+      # themselves, so the workflow needs no CI-specific interface.
+      - name: Download rootfs artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: rootfs-${{ matrix.suite }}-${{ matrix.flavor }}
+          path: build
+
+      - name: Download kernel artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: kernel-vendor
+          path: build
+
+      - name: Build image
+        run: |
+          sudo ./build.sh \
+            --board=${{ matrix.board }} \
+            --suite=${{ matrix.suite }} \
+            --flavor=${{ matrix.flavor }} \
+            --kernel=vendor
+
+      - name: Upload image
+        uses: actions/upload-artifact@v7
+        with:
+          name: image-${{ matrix.board }}-${{ matrix.suite }}-${{ matrix.flavor }}
+          path: |
+            images/*.img.xz
+            images/*.img.xz.sha256
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: log-${{ matrix.board }}-${{ matrix.suite }}-${{ matrix.flavor }}
+          path: build/logs/*.log
+          if-no-files-found: warn
+
+  prerelease:
+    runs-on: ubuntu-24.04
+    needs: build
+    name: Publish pre-release
+    # A manual build publishes whatever succeeded; formal releases are tag-driven
+    # and all-or-nothing (see release.yml).
+    if: always() && (needs.build.result == 'success' || needs.build.result == 'failure')
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Download image artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: image-*
+          path: dist
+          merge-multiple: true
+
+      - name: Create pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          count="$(find dist -type f -name '*.img.xz' | wc -l)"
+          [ "${count}" -gt 0 ] || { echo "Error: no images to publish"; exit 1; }
+          tag="pre-$(date -u +%Y%m%d-%H%M)-${GITHUB_SHA::8}"
+          title="Mixtile OS pre-release ${tag}"
+          [ "${{ needs.build.result }}" == "success" ] || title="${title} (partial)"
+          gh release create "${tag}" dist/* \
+              --target "${GITHUB_SHA}" \
+              --title "${title}" \
+              --prerelease \
+              --generate-notes
+          echo "### [${tag}](${{ github.server_url }}/${{ github.repository }}/releases/tag/${tag}) — ${count} image(s)" \
+              >> "${GITHUB_STEP_SUMMARY}"

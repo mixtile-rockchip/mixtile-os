@@ -1,0 +1,10 @@
+# Build work area (rootfs, chroots, debs, logs)
+/build/
+
+# Image output
+/images/
+
+# Editor swap / backup files
+*.swp
+*~
+.DS_Store

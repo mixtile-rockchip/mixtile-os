@@ -1,0 +1,26 @@
+#!/bin/sh
+# Write the Rockchip vendor bootloader to a block device.
+#
+# Two-file layout (radxa vendor U-Boot):
+#   idbloader.img (DDR init + SPL) at LBA 64    (0x8000, 32 KiB)
+#   u-boot.itb    (FIT: U-Boot + BL31) at LBA 16384 (0x800000, 8 MiB)
+# conv=notrunc so the partition table and rootfs are left untouched.
+
+set -e
+
+disk="$1"
+if [ $# -ne 1 ]; then
+    echo "Usage: $(basename "$0") /dev/mmcblk0"
+    exit 1
+fi
+
+if [ ! -b "${disk}" ]; then
+    echo "$(basename "$0"): '${disk}' is not a block device"
+    exit 1
+fi
+
+echo "Writing idbloader.img to ${disk} (LBA 64)"
+dd if=/usr/lib/u-boot/idbloader.img of="${disk}" seek=64 conv=notrunc,fsync
+echo "Writing u-boot.itb to ${disk} (LBA 16384)"
+dd if=/usr/lib/u-boot/u-boot.itb of="${disk}" seek=16384 conv=notrunc,fsync
+sync "${disk}"

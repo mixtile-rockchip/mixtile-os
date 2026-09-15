@@ -1,0 +1,198 @@
+name: Release
+
+run-name: Release ${{ github.ref_name }}
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+env:
+  BUILD_DEPS: >-
+    ca-certificates curl wget git file xz-utils zstd bzip2 patch lsb-release
+    dctrl-tools mmdebstrap arch-test qemu-user-static binfmt-support
+    debian-archive-keyring ubuntu-keyring gpg gpg-agent dirmngr apt-utils
+    build-essential debhelper devscripts dpkg-dev fakeroot quilt
+    gcc-aarch64-linux-gnu bc bison flex libssl-dev libelf-dev dwarves kmod
+    cpio rsync python3 python3-dev python3-setuptools python3-pyelftools
+    python-is-python3 swig libpython3-dev u-boot-tools device-tree-compiler
+    libfdt-dev libgnutls28-dev uuid-dev parted fdisk gdisk dosfstools
+    e2fsprogs uuid-runtime util-linux udev
+
+jobs:
+  # Created as a draft so image jobs have somewhere to upload as they finish,
+  # while an incomplete set never becomes visible as a release.
+  prepare_release:
+    runs-on: ubuntu-24.04
+    name: Create release
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "${GITHUB_REF_NAME}" > /dev/null 2>&1 ||
+            gh release create "${GITHUB_REF_NAME}" \
+                --draft \
+                --title "Mixtile OS ${GITHUB_REF_NAME}" \
+                --generate-notes
+
+  rootfs:
+    runs-on: ubuntu-24.04
+    name: Build rootfs
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [noble, resolute, bookworm, trixie]
+        flavor: [server, desktop]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ${BUILD_DEPS}
+
+      - name: Verify arm64 binfmt handler
+        run: |
+          set -eu
+          f=/proc/sys/fs/binfmt_misc/qemu-aarch64
+          [ -f "${f}" ] || { echo "Error: no qemu-aarch64 handler registered"; exit 1; }
+          grep -q '^enabled' "${f}" || { echo "Error: handler is not enabled"; exit 1; }
+          grep -q '^flags:' "${f}" || { echo "Error: handler reports no flags line"; exit 1; }
+          awk '/^flags:/ { if ($2 !~ /F/) { print "Error: flags " $2 " lack F (fix-binary)"; exit 1 } }' "${f}"
+          arch-test arm64
+
+      - name: Build rootfs
+        run: sudo ./build.sh --suite=${{ matrix.suite }} --flavor=${{ matrix.flavor }} --rootfs-only
+
+      - name: Upload rootfs tarball
+        uses: actions/upload-artifact@v7
+        with:
+          name: rootfs-${{ matrix.suite }}-${{ matrix.flavor }}
+          path: build/*.rootfs.tar.zst
+          if-no-files-found: error
+          compression-level: 0
+
+  kernel:
+    runs-on: ubuntu-24.04
+    name: Build kernel
+    timeout-minutes: 120
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ${BUILD_DEPS}
+
+      # One build serves every suite, flavor and board; it also pins every image
+      # in this release to a single kernel commit.
+      - name: Build kernel packages
+        run: sudo ./build.sh --kernel-only --kernel=vendor
+
+      - name: Upload kernel packages
+        uses: actions/upload-artifact@v7
+        with:
+          name: kernel-vendor
+          path: |
+            build/*.deb
+            !build/*-dbg_*.deb
+            !build/linux-libc-dev_*.deb
+          if-no-files-found: error
+          compression-level: 0
+
+  build:
+    runs-on: ubuntu-24.04
+    needs: [prepare_release, rootfs, kernel]
+    name: Build image
+    timeout-minutes: 120
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        board: [mixtile-blade3, mixtile-edge2, mixtile-core3588e]
+        suite: [noble, resolute, bookworm, trixie]
+        flavor: [server, desktop]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ${BUILD_DEPS}
+
+      - name: Verify arm64 binfmt handler
+        run: |
+          set -eu
+          f=/proc/sys/fs/binfmt_misc/qemu-aarch64
+          [ -f "${f}" ] || { echo "Error: no qemu-aarch64 handler registered"; exit 1; }
+          grep -q '^enabled' "${f}" || { echo "Error: handler is not enabled"; exit 1; }
+          grep -q '^flags:' "${f}" || { echo "Error: handler reports no flags line"; exit 1; }
+          awk '/^flags:/ { if ($2 !~ /F/) { print "Error: flags " $2 " lack F (fix-binary)"; exit 1 } }' "${f}"
+
+      - name: Download rootfs artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: rootfs-${{ matrix.suite }}-${{ matrix.flavor }}
+          path: build
+
+      - name: Download kernel artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: kernel-vendor
+          path: build
+
+      - name: Build image
+        run: |
+          sudo ./build.sh \
+            --board=${{ matrix.board }} \
+            --suite=${{ matrix.suite }} \
+            --flavor=${{ matrix.flavor }} \
+            --kernel=vendor
+
+      # --clobber so re-running a single failed board replaces its assets.
+      - name: Upload image to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${GITHUB_REF_NAME}" \
+              images/*.img.xz images/*.img.xz.sha256 --clobber
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: log-${{ matrix.board }}-${{ matrix.suite }}-${{ matrix.flavor }}
+          path: build/logs/*.log
+          if-no-files-found: warn
+
+  # Only a complete image set is published; otherwise the draft stays for
+  # inspection and the failed board can be re-run into it.
+  publish:
+    runs-on: ubuntu-24.04
+    needs: build
+    name: Publish release
+    permissions:
+      contents: write
+    steps:
+      # No checkout, so gh needs the repo named explicitly.
+      - name: Promote draft to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release edit "${GITHUB_REF_NAME}" --draft=false --latest
+          echo "### [${GITHUB_REF_NAME}](${{ github.server_url }}/${{ github.repository }}/releases/tag/${GITHUB_REF_NAME})" \
+              >> "${GITHUB_STEP_SUMMARY}"

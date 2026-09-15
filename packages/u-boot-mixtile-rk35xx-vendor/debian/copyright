@@ -1,0 +1,30 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: u-boot
+Source: https://github.com/radxa/u-boot (branch next-dev-v2024.03)
+
+Files: *
+Copyright: Das U-Boot contributors
+License: GPL-2.0+
+
+Files: debian/rkbin/*
+Copyright: Rockchip Electronics Co., Ltd.
+License: proprietary
+ Redistributable binary-only firmware blobs published by Rockchip in
+ https://github.com/rockchip-linux/rkbin under bin/rk35, for use on Rockchip
+ SoCs. No source is published for any of them.
+ .
+   rk3588_ddr_lp4_2112MHz_lp5_2400MHz_v1.24.bin
+     RK3588 DDR initialisation, ddrbin v1.24 (LPDDR4 2112MHz / LPDDR5 2400MHz)
+   rk3588_bl31_v1.56.elf
+     RK3588 ARM Trusted Firmware BL31 v1.56
+   rk3568_ddr_1560MHz_v1.26.bin
+     RK3568 DDR initialisation, ddrbin v1.26 (1560MHz)
+   rk3568_bl31_v1.46.elf
+     RK3568 ARM Trusted Firmware BL31 v1.46
+ .
+ All taken verbatim from rkbin master at commit
+ 3e288fe814e059dd06833495f845cab04ac20a5c (2026-06-26).
+
+License: GPL-2.0+
+ On Debian systems the full text of the GNU General Public License version 2
+ can be found in /usr/share/common-licenses/GPL-2.

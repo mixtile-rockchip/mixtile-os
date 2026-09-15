@@ -1,0 +1,9 @@
+# shellcheck shell=bash
+# Upstream coordinates for the Mixtile RK35xx vendor kernel.
+#
+# Sourced by scripts/build-kernel.sh. Deliberately no COMMIT: this line follows
+# the branch so that upstream fixes arrive without a config change. The sha that
+# a given build actually used is printed into the build log by build-kernel.sh.
+#
+GIT="https://github.com/armbian/linux-rockchip.git"
+BRANCH="rk-6.1-rkr7.2"

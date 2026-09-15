@@ -1,0 +1,41 @@
+From: Mixtile <support@mixtile.com>
+Date: Thu, 11 Sep 2026 00:00:00 +0000
+Subject: [PATCH] rockchip: fix FIT generator for out-of-tree (O=) builds
+
+The FIT generator sources its helpers with "source ./${srctree}/...". When
+building out-of-tree (make O=...), the Makefile exports ${srctree} as an
+absolute path, so "./" + "/abs/path" becomes ".//abs/path", which is resolved
+relative to the object tree and does not exist, breaking u-boot.its generation:
+
+  make_fit_atf.sh: line 8: .//<srctree>/arch/arm/mach-rockchip/fit_nodes.sh: No such file or directory
+
+Drop the leading "./" so the absolute ${srctree} resolves correctly. In-tree
+builds (${srctree}=".") are unaffected. fit_args.sh still resets srctree=$PWD
+afterwards, so all later lookups stay in the object tree.
+
+diff --git a/arch/arm/mach-rockchip/fit_nodes.sh b/arch/arm/mach-rockchip/fit_nodes.sh
+index 9639a06..dcf7509 100755
+--- a/arch/arm/mach-rockchip/fit_nodes.sh
++++ b/arch/arm/mach-rockchip/fit_nodes.sh
+@@ -6,7 +6,7 @@
+ #
+ 
+ # Process args and auto set variables
+-source ./${srctree}/arch/arm/mach-rockchip/fit_args.sh
++source ${srctree}/arch/arm/mach-rockchip/fit_args.sh
+ rm -f ${srctree}/*.digest ${srctree}/*.bin.gz ${srctree}/bl31_0x*.bin
+ 
+ # Periph register
+diff --git a/arch/arm/mach-rockchip/make_fit_atf.sh b/arch/arm/mach-rockchip/make_fit_atf.sh
+index 045273e..fa6a978 100755
+--- a/arch/arm/mach-rockchip/make_fit_atf.sh
++++ b/arch/arm/mach-rockchip/make_fit_atf.sh
+@@ -5,7 +5,7 @@
+ # SPDX-License-Identifier:     GPL-2.0+
+ #
+ 
+-source ./${srctree}/arch/arm/mach-rockchip/fit_nodes.sh
++source ${srctree}/arch/arm/mach-rockchip/fit_nodes.sh
+ 
+ gen_header
+ gen_uboot_node

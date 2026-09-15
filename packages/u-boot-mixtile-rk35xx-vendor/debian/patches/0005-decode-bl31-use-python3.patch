@@ -1,0 +1,19 @@
+From: Mixtile <support@mixtile.com>
+Date: Thu, 11 Sep 2026 00:00:00 +0000
+Subject: [PATCH] rockchip: run decode_bl31.py under python3
+
+The FIT generator executes decode_bl31.py via its shebang, which is python2.
+The build container ships only python3. The script is already python3-clean
+(range, bytes literals, %-formatting, struct -- no python2-only constructs),
+so switch the shebang to python3.
+
+diff --git a/arch/arm/mach-rockchip/decode_bl31.py b/arch/arm/mach-rockchip/decode_bl31.py
+index 42fa32d..1cff8c3 100755
+--- a/arch/arm/mach-rockchip/decode_bl31.py
++++ b/arch/arm/mach-rockchip/decode_bl31.py
+@@ -1,4 +1,4 @@
+-#!/usr/bin/env python2
++#!/usr/bin/env python3
+ #
+ # Copyright (C) 2020 Rockchip Electronics Co., Ltd
+ #

@@ -1,0 +1,98 @@
+#!/usr/bin/make -f
+
+include /usr/share/dpkg/architecture.mk
+include /usr/share/dpkg/pkg-info.mk
+include debian/targets.mk
+
+ifneq ($(DEB_BUILD_GNU_TYPE),$(DEB_HOST_GNU_TYPE))
+CROSS_COMPILE ?= $(DEB_HOST_GNU_TYPE)-
+endif
+
+ifneq (,$(filter parallel=%,$(DEB_BUILD_OPTIONS)))
+NJOBS := -j $(patsubst parallel=%,%,$(filter parallel=%,$(DEB_BUILD_OPTIONS)))
+else
+NJOBS := -j $(shell nproc)
+endif
+
+RKBIN := $(CURDIR)/debian/rkbin
+O      = debian/build/$@
+
+# U-Boot keeps arm64 under arch/arm, so ARCH=arm is correct for RK3588.
+# KCFLAGS=-Wno-error: this Rockchip vendor tree (2017.09 base) predates the GCC
+# the build environment ships (13 or newer) and trips newer -Werror diagnostics
+# (false-positive -Wmaybe-uninitialized and friends). Demote them rather than
+# fork the vendor sources over toolchain drift; KCFLAGS is appended after the
+# tree's own -Werror, so it wins.
+MAKEVARS = O=$(O) ARCH=arm CROSS_COMPILE=$(CROSS_COMPILE) $(NJOBS) KCFLAGS=-Wno-error
+
+# Radxa vendor U-Boot (rockchip 2017.09 base). debian/patches/ is applied by
+# scripts/build-u-boot.sh before this runs; here we only add the board files
+# U-Boot does not carry upstream and drive the vendor recipe:
+#
+#   make u-boot.itb  -> FIT holding U-Boot proper + BL31 (via decode_bl31.py)
+#   mkimage rksd     -> idbloader.img = DDR init blob + SPL
+#
+# The result is the two-file Rockchip loader (idbloader.img @ LBA 64,
+# u-boot.itb @ LBA 16384), not mainline's single u-boot-rockchip.bin.
+${uboot_platforms}:
+	@mkdir -p $(O)
+	@touch .scmversion
+
+	# Board files U-Boot does not carry upstream.
+	cp debian/board/$($@_board)/$@_defconfig configs/
+	cp debian/board/$($@_board)/*.dts arch/arm/dts/
+
+	make $(MAKEVARS) $@_defconfig
+	@sed -i 's/^CONFIG_BOOTDELAY=.*/CONFIG_BOOTDELAY=0/' $(O)/.config
+	@sed -i 's/^CONFIG_DISABLE_CONSOLE=y/# CONFIG_DISABLE_CONSOLE is not set/' $(O)/.config
+	make $(MAKEVARS) olddefconfig
+
+	# The FIT generator runs decode_bl31.py out of the O= tree.
+	@mkdir -p $(O)/arch/arm/mach-rockchip
+	cp arch/arm/mach-rockchip/decode_bl31.py $(O)/arch/arm/mach-rockchip/
+	cp $(RKBIN)/$($@_bl31) $(O)/bl31.elf
+
+	make $(MAKEVARS) \
+	  SOURCE_DATE_EPOCH=$(SOURCE_DATE_EPOCH) \
+	  BL31=$(RKBIN)/$($@_bl31) \
+	  spl/u-boot-spl.bin u-boot.dtb u-boot.itb
+
+	# idbloader = DDR init blob + SPL, in Rockchip rksd container.
+	$(O)/tools/mkimage -n $($@_soc) -T rksd \
+	  -d $(RKBIN)/$($@_ddr):$(O)/spl/u-boot-spl.bin \
+	  $(O)/idbloader.img
+
+	test -f $(O)/idbloader.img
+	test -f $(O)/u-boot.itb
+
+package-%:
+	$(eval PLAT := $(subst package-,,$@))
+	$(eval PKG  := u-boot-$($(PLAT)_pkg))
+	@rm -rf debian/tmp
+	@mkdir -m 755 -p debian/tmp/usr/lib/u-boot debian/tmp/usr/bin \
+	                 debian/tmp/usr/share/doc/$(PKG) debian/tmp/DEBIAN
+
+	cp debian/build/$(PLAT)/idbloader.img debian/tmp/usr/lib/u-boot/
+	cp debian/build/$(PLAT)/u-boot.itb    debian/tmp/usr/lib/u-boot/
+	install -m 755 debian/bin/u-boot-install debian/tmp/usr/bin/u-boot-install
+
+	cp debian/copyright debian/tmp/usr/share/doc/$(PKG)/
+	cp debian/changelog debian/tmp/usr/share/doc/$(PKG)/changelog.Debian
+	gzip -9n debian/tmp/usr/share/doc/$(PKG)/changelog.Debian
+
+	cd debian/tmp && find . -type f ! -path './DEBIAN/*' -printf '%P\0' \
+	  | xargs -r0 md5sum > DEBIAN/md5sums
+	chown -R root:root debian/tmp
+	chmod -R go-w debian/tmp && chmod -R a+rX debian/tmp
+	dpkg-gencontrol -p$(PKG) -Pdebian/tmp
+	dpkg --build debian/tmp ..
+
+build: ${uboot_platforms}
+binary-arch: $(addprefix package-,${uboot_platforms})
+binary: binary-arch
+
+clean:
+	@rm -rf debian/tmp debian/build debian/files debian/*.substvars
+	@rm -f .scmversion
+
+.PHONY: build binary binary-arch clean

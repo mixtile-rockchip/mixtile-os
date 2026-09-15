@@ -1,0 +1,19 @@
+[Unit]
+Description=Mixtile first boot setup
+# The condition is the observable end state, never a "have we booted before"
+# flag. systemd commits /etc/machine-id early in the first boot, so a flag-based
+# condition has a window in which the flag is already cleared but the work has
+# not been done; a power cut inside it leaves the action never to run again and
+# says nothing about it. That is exactly how ConditionFirstBoot=yes can leave a
+# board with no SSH host keys and no explanation.
+ConditionPathExistsGlob=!/etc/ssh/ssh_host_*_key
+Before=ssh.service sshd.service
+Wants=ssh.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=no
+ExecStart=/usr/bin/ssh-keygen -A
+
+[Install]
+WantedBy=multi-user.target

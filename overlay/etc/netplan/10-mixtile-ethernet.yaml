@@ -1,0 +1,12 @@
+# Let systemd-networkd manage every wired interface, configured through netplan.
+# Reference: https://netplan.readthedocs.io/en/stable/netplan-yaml/
+network:
+  version: 2
+  renderer: networkd
+  ethernets:
+    all-eth-interfaces:
+      match:
+        name: "e*"
+      dhcp4: yes
+      dhcp6: yes
+      ipv6-privacy: yes
