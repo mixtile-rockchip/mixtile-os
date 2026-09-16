@@ -6,6 +6,7 @@ locales
 sysfsutils
 netplan.io
 network-manager
+systemd-resolved
 openssh-server
 sudo
 ca-certificates
