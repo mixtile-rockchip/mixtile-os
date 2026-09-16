@@ -1,4 +1,4 @@
-firmware-misc-nonfree
+firmware-misc-nonfree/bookworm-backports
 firmware-realtek
 firmware-brcm80211
 firmware-nvidia-graphics-

@@ -1,1 +1,6 @@
 gnome-core
+libgl1-mesa-dri/bookworm-backports
+libgbm1/bookworm-backports
+libegl-mesa0/bookworm-backports
+libglx-mesa0/bookworm-backports
+mesa-vulkan-drivers/bookworm-backports
