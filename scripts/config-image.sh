@@ -216,6 +216,16 @@ CONF
     chmod 0644 "${chroot_dir}/var/lib/AccountsService/users/${default_user}"
 fi
 
+gdm_conf=""
+for f in daemon.conf custom.conf; do
+    [ -f "${chroot_dir}/etc/gdm3/${f}" ] || continue
+    gdm_conf="${chroot_dir}/etc/gdm3/${f}"
+    break
+done
+if [ -n "${gdm_conf}" ]; then
+    sed -i "/^\[daemon\]/a AutomaticLoginEnable=true\nAutomaticLogin=${default_user}" "${gdm_conf}"
+fi
+
 # mmdebstrap writes the build environment's hostname here, and its /etc/hosts has no
 # IPv6 block at all -- appending one line would leave the hostname unresolvable
 # over v6, so both files are written whole.
