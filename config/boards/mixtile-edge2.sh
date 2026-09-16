@@ -22,7 +22,7 @@ export BOARD_FDT_OVERLAYS=""
 # ttyS2 at 1.5M is the RK3568 debug UART, the rate the U-Boot defconfig uses
 # (CONFIG_DEBUG_UART_BASE=0xFE660000, CONFIG_BAUDRATE=1500000). consoleblank=0
 # keeps the console readable once it blanks, which is when a hang is noticed.
-export BOARD_CMDLINE="console=ttyS2,1500000 console=tty1 consoleblank=0 cma=256M"
+export BOARD_CMDLINE="console=ttyS2,1500000 console=tty1 consoleblank=0 cma=256M splash plymouth.ignore-serial-consoles"
 
 # Called by config-image.sh with the rootfs directory as $1 and the installed
 # kernel version as $2. Written into the rootfs here rather than shipped as a
