@@ -71,4 +71,29 @@ CONF
     # mixtile-first-boot.service to regenerate them. Enabled here rather than in
     # a postinst: enabling a unit needs a running systemd, which a chroot lacks.
     chroot "${rootfs}" systemctl enable mixtile-first-boot.service > /dev/null 2>&1 || true
+
+    local suite
+    suite="$(chroot "${rootfs}" sh -c '. /etc/os-release; printf %s "${VERSION_CODENAME}"')"
+    [ -n "${suite}" ] || { echo "Error: no VERSION_CODENAME in ${rootfs}/etc/os-release"; return 1; }
+
+    [ -f "${rootfs}/etc/apt/keyrings/mixtile-archive-keyring.gpg" ] || {
+        echo "Error: mixtile archive keyring missing from ${rootfs}"; return 1; }
+
+    cat > "${rootfs}/etc/apt/sources.list.d/mixtile-archive.sources" <<SOURCES
+Types: deb
+URIs: https://mixtile-rockchip.github.io/archive
+Suites: ${suite}
+Components: main
+Architectures: arm64
+Signed-By: /etc/apt/keyrings/mixtile-archive-keyring.gpg
+SOURCES
+
+    local archive_packages=(
+        librga2 librockchip-mpp1 librockchip-vpu0 librknnrt rockchip-multimedia-config
+        rockchip-mpp-demos ffmpeg-rockchip gstreamer1.0-rockchip1
+    )
+    retry 3 chroot "${rootfs}" apt-get -y update
+    chroot "${rootfs}" apt-get -y --dry-run install "${archive_packages[@]}" > /dev/null
+    retry 3 chroot "${rootfs}" apt-get -y -d install "${archive_packages[@]}"
+    chroot "${rootfs}" apt-get -y install "${archive_packages[@]}"
 }
