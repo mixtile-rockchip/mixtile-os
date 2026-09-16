@@ -204,6 +204,18 @@ done
 chroot "${chroot_dir}" useradd -m -s /bin/bash -G "${groups}" "${default_user}"
 echo "${default_user}:${default_pass}" | chroot "${chroot_dir}" chpasswd
 
+if [ -f "${chroot_dir}/usr/share/mixtile/user-icon.png" ] && [ -d "${chroot_dir}/var/lib/AccountsService" ]; then
+    mkdir -p "${chroot_dir}/var/lib/AccountsService/icons" "${chroot_dir}/var/lib/AccountsService/users"
+    install -m 0644 -o root -g root "${chroot_dir}/usr/share/mixtile/user-icon.png" \
+        "${chroot_dir}/var/lib/AccountsService/icons/${default_user}"
+    cat > "${chroot_dir}/var/lib/AccountsService/users/${default_user}" <<CONF
+[User]
+Icon=/var/lib/AccountsService/icons/${default_user}
+SystemAccount=false
+CONF
+    chmod 0644 "${chroot_dir}/var/lib/AccountsService/users/${default_user}"
+fi
+
 # mmdebstrap writes the build environment's hostname here, and its /etc/hosts has no
 # IPv6 block at all -- appending one line would leave the hostname unresolvable
 # over v6, so both files are written whole.
