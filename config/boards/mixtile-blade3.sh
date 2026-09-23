@@ -13,24 +13,20 @@ export UBOOT_PACKAGE=u-boot-mixtile-rk35xx-vendor
 export UBOOT_RULES_TARGET=mixtile-blade3-rk3588
 export UBOOT_BINARY_PACKAGE=u-boot-mixtile-blade3
 
-# Device tree from the vendor kernel package. The vendor DT binds the GPU to
-# the Mali kbase driver; the overlay switches it to panthor, without which Mesa
-# finds no render node and falls back to llvmpipe.
-export BOARD_FDT="rockchip/rk3588-blade3-v101-linux.dtb"
-export BOARD_FDT_OVERLAYS="rockchip/overlay/rockchip-rk3588-panthor-gpu.dtbo"
+# Device tree from the vendor kernel package.
+export BOARD_FDT="rockchip/rk3588-mixtile-blade3.dtb"
 
 # ttyS2 at 1.5M is the RK3588 debug UART. consoleblank=0 keeps the console
 # readable once it blanks, which is when a hang is usually noticed.
 export BOARD_CMDLINE="console=ttyS2,1500000 console=tty1 consoleblank=0 cma=256M splash plymouth.ignore-serial-consoles"
 
-# Called by config-image.sh with the rootfs directory as $1 and the installed
-# kernel version as $2. Written into the rootfs here rather than shipped as a
-# package or overlay file: the u-boot-menu config names the device tree, which
-# depends on the kernel variant.
+# Called by config-image.sh with the rootfs directory as $1. Written into the
+# rootfs here rather than shipped as a package or overlay file: the u-boot-menu
+# config names the device tree, which depends on the kernel variant.
 config_image_hook__mixtile-blade3() {
-    local rootfs="$1" kver="$2"
+    local rootfs="$1"
 
-    : "${BOARD_FDT:?}" "${BOARD_CMDLINE:?}" "${KERNEL_CMDLINE:?}" "${kver:?}"
+    : "${BOARD_FDT:?}" "${BOARD_CMDLINE:?}" "${KERNEL_CMDLINE:?}"
 
     mkdir -p "${rootfs}/etc/kernel" "${rootfs}/usr/share/u-boot-menu/conf.d"
 
@@ -40,16 +36,10 @@ config_image_hook__mixtile-blade3() {
     # conf.d is read after /etc/default/u-boot and before /etc/u-boot-menu/, so
     # vendor defaults land here and both /etc locations stay free for the user.
     #
-    # U_BOOT_FDT_DIR and U_BOOT_FDT_OVERLAYS_DIR are both required and are not
-    # interchangeable (u-boot-menu 4.2.3):
+    # U_BOOT_FDT_DIR is a prefix and gets the kernel version appended
+    # (u-boot-menu 4.2.3):
     #
     #   u-boot-update:139  ${U_BOOT_FDT_DIR}${_VERSION}/${U_BOOT_FDT}
-    #   u-boot-update:162  ${U_BOOT_FDT_OVERLAYS_DIR}/${_DTBO}
-    #
-    # FDT_DIR is a prefix and gets the kernel version appended; OVERLAYS_DIR is
-    # a complete directory and does not. Given the bare prefix, line 155's
-    # directory test fails and u-boot-update emits an empty fdtoverlays line --
-    # the overlay silently never loads. Hence $2.
     #
     # Ubuntu patches the package default to /lib/firmware/ for its own kernel
     # packaging; with bindeb-pkg's layout that yields an empty fdt line and a
@@ -62,9 +52,7 @@ U_BOOT_UPDATE="true"
 U_BOOT_TIMEOUT="20"
 U_BOOT_PARAMETERS="\$(cat /etc/kernel/cmdline)"
 U_BOOT_FDT="${BOARD_FDT}"
-U_BOOT_FDT_OVERLAYS="${BOARD_FDT_OVERLAYS}"
 U_BOOT_FDT_DIR="/usr/lib/linux-image-"
-U_BOOT_FDT_OVERLAYS_DIR="/usr/lib/linux-image-${kver}"
 CONF
 
     # ssh host keys are stripped from the shared rootfs; overlay/ ships

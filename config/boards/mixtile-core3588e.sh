@@ -13,24 +13,20 @@ export UBOOT_PACKAGE=u-boot-mixtile-rk35xx-vendor
 export UBOOT_RULES_TARGET=mixtile-core3588e-rk3588
 export UBOOT_BINARY_PACKAGE=u-boot-mixtile-core3588e
 
-# Device tree from the vendor kernel package. Same RK3588 GPU as the Blade 3,
-# so the same panthor overlay applies; without it Mesa finds no render node and
-# falls back to llvmpipe.
+# Device tree from the vendor kernel package.
 export BOARD_FDT="rockchip/rk3588-mixtile-core3588e.dtb"
-export BOARD_FDT_OVERLAYS="rockchip/overlay/rockchip-rk3588-panthor-gpu.dtbo"
 
 # ttyS2 at 1.5M is the RK3588 debug UART. consoleblank=0 keeps the console
 # readable once it blanks, which is when a hang is usually noticed.
 export BOARD_CMDLINE="console=ttyS2,1500000 console=tty1 consoleblank=0 cma=256M splash plymouth.ignore-serial-consoles"
 
-# Called by config-image.sh with the rootfs directory as $1 and the installed
-# kernel version as $2. Written into the rootfs here rather than shipped as a
-# package or overlay file: the u-boot-menu config names the device tree, which
-# depends on the kernel variant.
+# Called by config-image.sh with the rootfs directory as $1. Written into the
+# rootfs here rather than shipped as a package or overlay file: the u-boot-menu
+# config names the device tree, which depends on the kernel variant.
 config_image_hook__mixtile-core3588e() {
-    local rootfs="$1" kver="$2"
+    local rootfs="$1"
 
-    : "${BOARD_FDT:?}" "${BOARD_CMDLINE:?}" "${KERNEL_CMDLINE:?}" "${kver:?}"
+    : "${BOARD_FDT:?}" "${BOARD_CMDLINE:?}" "${KERNEL_CMDLINE:?}"
 
     mkdir -p "${rootfs}/etc/kernel" "${rootfs}/usr/share/u-boot-menu/conf.d"
 
@@ -41,16 +37,13 @@ config_image_hook__mixtile-core3588e() {
     # vendor defaults land here and both /etc locations stay free for the user.
     #
     # U_BOOT_FDT_DIR is a prefix and gets the kernel version appended;
-    # U_BOOT_FDT_OVERLAYS_DIR is a complete directory and does not. Hence $2;
     # see config/boards/mixtile-blade3.sh for why.
     cat > "${rootfs}/usr/share/u-boot-menu/conf.d/mixtile.conf" <<CONF
 U_BOOT_UPDATE="true"
 U_BOOT_TIMEOUT="20"
 U_BOOT_PARAMETERS="\$(cat /etc/kernel/cmdline)"
 U_BOOT_FDT="${BOARD_FDT}"
-U_BOOT_FDT_OVERLAYS="${BOARD_FDT_OVERLAYS}"
 U_BOOT_FDT_DIR="/usr/lib/linux-image-"
-U_BOOT_FDT_OVERLAYS_DIR="/usr/lib/linux-image-${kver}"
 CONF
 
     # ssh host keys are stripped from the shared rootfs; overlay/ ships
