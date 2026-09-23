@@ -167,9 +167,41 @@ jobs:
           compression-level: 0
           retention-days: 1
 
+  uboot:
+    runs-on: ubuntu-24.04
+    name: Build U-Boot
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        board: ${{ inputs.board == 'all' && fromJSON('["mixtile-blade3","mixtile-edge2","mixtile-core3588e"]') || fromJSON(format('["{0}"]', inputs.board)) }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ${BUILD_DEPS}
+
+      # Depends on the board and nothing else, so one build serves that board's
+      # every suite and flavor. No binfmt here: this is a cross compile with no
+      # chroot, same as the kernel.
+      - name: Build U-Boot package
+        run: sudo ./build.sh --board=${{ matrix.board }} --uboot-only
+
+      - name: Upload U-Boot package
+        uses: actions/upload-artifact@v7
+        with:
+          name: u-boot-${{ matrix.board }}
+          path: build/u-boot-${{ matrix.board }}_*.deb
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
   build:
     runs-on: ubuntu-24.04
-    needs: [prepare, rootfs, kernel]
+    needs: [prepare, rootfs, kernel, uboot]
     name: Build image
     timeout-minutes: 120
     permissions:
@@ -210,6 +242,12 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: kernel-vendor
+          path: build
+
+      - name: Download U-Boot artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: u-boot-${{ matrix.board }}
           path: build
 
       - name: Build image
@@ -282,7 +320,7 @@ jobs:
   # uploads fail, so every run cleans up after itself -- including failed ones.
   cleanup:
     runs-on: ubuntu-24.04
-    needs: [prepare, rootfs, kernel, build, publish]
+    needs: [prepare, rootfs, kernel, uboot, build, publish]
     name: Delete run artifacts
     if: always()
     permissions:
