@@ -96,11 +96,14 @@ echo "==> config: base + ${#fragments[@]} fragment(s)"
 
 # LOCALVERSION on the command line, with CONFIG_LOCALVERSION left empty, so no
 # git hash is appended and the version string is reproducible.
+pkg_revision=1
+
 make_args=(
     -C "${src}"
     ARCH=arm64
     CROSS_COMPILE=aarch64-linux-gnu-
     LOCALVERSION="${KERNEL_LOCALVERSION}"
+    KBUILD_BUILD_VERSION="${pkg_revision}"
 )
 
 make "${make_args[@]}" olddefconfig
@@ -110,9 +113,6 @@ echo "==> kernel version: ${kernel_version}"
 
 make "${make_args[@]}" "-j$(nproc)" Image modules dtbs
 
-# Package serially: 6.1's Makefile.dtbinst installs each dtb with `install -D`,
-# and concurrent jobs race creating the shared rockchip/ directory.
-#
 # INSTALL_MOD_STRIP=1 drops module DWARF but keeps .BTF. Without it the image
 # deb is over 300MB instead of ~32MB, because the config we inherit from Armbian
 # has DEBUG_INFO_DWARF5 on. Stripping at package time rather than turning that
@@ -120,8 +120,8 @@ make "${make_args[@]}" "-j$(nproc)" Image modules dtbs
 # KDEB_PKGVERSION is set explicitly because bindeb-pkg's default appends a
 # build counter from .version, which increments on every make and so is not
 # reproducible.
-make "${make_args[@]}" -j1 \
-    KDEB_PKGVERSION="${kernel_version}-1" \
+make "${make_args[@]}" "-j$(nproc)" \
+    KDEB_PKGVERSION="${kernel_version}-${pkg_revision}" \
     KBUILD_IMAGE=arch/arm64/boot/Image \
     INSTALL_MOD_STRIP=1 \
     bindeb-pkg
