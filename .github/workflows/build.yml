@@ -39,6 +39,54 @@ env:
     e2fsprogs uuid-runtime util-linux udev
 
 jobs:
+  # Created up front so image jobs can upload straight into it as they finish,
+  # the same shape release.yml uses. A draft is invisible until promoted, so a
+  # run that produces nothing never shows up as a release.
+  prepare:
+    runs-on: ubuntu-24.04
+    name: Create pre-release
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - name: Create draft pre-release
+        id: tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # Tag is <UTC date>-b<run number>, but the date is only meaningful at
+          # first creation: a re-run can land on a different UTC day, and the
+          # tag must not move. So the release this run already owns is found by
+          # run id -- exact, and independent of whatever the tag ended up being.
+          #
+          # run_number names the build for humans; run_id associates the run
+          # with its release. Neither does the other's job.
+          marker="<!-- mixtile-build-run-id: ${GITHUB_RUN_ID} -->"
+          # --paginate, so the answer does not depend on the release being
+          # recent enough to fall inside some page limit.
+          matches="$(gh api --paginate "/repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+                     --jq ".[] | select((.body // \"\") | contains(\"${marker}\")) | .tag_name")"
+          tag="$(printf '%s' "${matches}" | head -n1)"
+          if [ -z "${tag}" ]; then
+              tag="$(date -u +%Y.%m.%d)-b${GITHUB_RUN_NUMBER}"
+              # The commit lives in the body rather than the tag: a tag already
+              # points at a commit, and a second copy of it only makes the name
+              # longer. --notes is prepended to --generate-notes' changelog.
+              notes="$(printf '%s\n\nBuilt from commit %s\nWorkflow run #%s\n' \
+                       "${marker}" "${GITHUB_SHA}" "${GITHUB_RUN_NUMBER}")"
+              gh release create "${tag}" \
+                  --target "${GITHUB_SHA}" \
+                  --title "Mixtile OS ${tag}" \
+                  --draft \
+                  --prerelease \
+                  --notes "${notes}" \
+                  --generate-notes
+          fi
+          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+
   rootfs:
     runs-on: ubuntu-24.04
     name: Build rootfs
@@ -76,6 +124,8 @@ jobs:
         run: sudo ./build.sh --suite=${{ matrix.suite }} --flavor=${{ matrix.flavor }} --rootfs-only
 
       # Board-independent, so one tarball serves every board of this suite/flavor.
+      # Job-to-job transport only: the cleanup job deletes it when the run ends,
+      # and retention-days is the backstop for when that does not happen.
       - name: Upload rootfs tarball
         uses: actions/upload-artifact@v7
         with:
@@ -83,6 +133,7 @@ jobs:
           path: build/*.rootfs.tar.zst
           if-no-files-found: error
           compression-level: 0
+          retention-days: 1
 
   kernel:
     runs-on: ubuntu-24.04
@@ -114,12 +165,15 @@ jobs:
             !build/linux-libc-dev_*.deb
           if-no-files-found: error
           compression-level: 0
+          retention-days: 1
 
   build:
     runs-on: ubuntu-24.04
-    needs: [rootfs, kernel]
+    needs: [prepare, rootfs, kernel]
     name: Build image
     timeout-minutes: 120
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -166,58 +220,104 @@ jobs:
             --flavor=${{ matrix.flavor }} \
             --kernel=vendor
 
-      - name: Upload image
-        uses: actions/upload-artifact@v7
-        with:
-          name: image-${{ matrix.board }}-${{ matrix.suite }}-${{ matrix.flavor }}
-          path: |
-            images/*.img.xz
-            images/*.img.xz.sha256
-          if-no-files-found: error
-          compression-level: 0
+      # Straight into the draft pre-release rather than through an artifact: the
+      # images are the product, and an artifact copy of them would be a second
+      # 20GB of storage that nothing ever reads. Build logs are not uploaded
+      # either -- build.sh tees them to stdout, so the job log already has them.
+      - name: Upload image to pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          gh release upload "${TAG}" \
+              images/*.img.xz images/*.img.xz.sha256 --clobber
 
-      - name: Upload build log
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: log-${{ matrix.board }}-${{ matrix.suite }}-${{ matrix.flavor }}
-          path: build/logs/*.log
-          if-no-files-found: warn
-
-  prerelease:
+  publish:
     runs-on: ubuntu-24.04
-    needs: build
+    needs: [prepare, build]
     name: Publish pre-release
-    # A manual build publishes whatever succeeded; formal releases are tag-driven
-    # and all-or-nothing (see release.yml).
-    if: always() && (needs.build.result == 'success' || needs.build.result == 'failure')
+    # always(), so that the draft prepare created is always either promoted or
+    # dropped -- an abandoned draft would otherwise outlive every run that was
+    # cancelled or failed outright.
+    if: always()
     permissions:
       contents: write
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v7
-
-      - name: Download image artifacts
-        uses: actions/download-artifact@v8
-        with:
-          pattern: image-*
-          path: dist
-          merge-multiple: true
-
-      - name: Create pre-release
+      - name: Promote draft to pre-release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          BUILD_RESULT: ${{ needs.build.result }}
         run: |
           set -eu
-          count="$(find dist -type f -name '*.img.xz' | wc -l)"
-          [ "${count}" -gt 0 ] || { echo "Error: no images to publish"; exit 1; }
-          tag="pre-$(date -u +%Y%m%d-%H%M)-${GITHUB_SHA::8}"
-          title="Mixtile OS pre-release ${tag}"
-          [ "${{ needs.build.result }}" == "success" ] || title="${title} (partial)"
-          gh release create "${tag}" dist/* \
-              --target "${GITHUB_SHA}" \
-              --title "${title}" \
-              --prerelease \
-              --generate-notes
-          echo "### [${tag}](${{ github.server_url }}/${{ github.repository }}/releases/tag/${tag}) — ${count} image(s)" \
+          [ -n "${TAG}" ] || { echo "Error: no tag, prepare did not run"; exit 1; }
+          count="$(gh release view "${TAG}" --json assets \
+                   --jq '[.assets[] | select(.name | endswith(".img.xz"))] | length')"
+          # A manual build publishes whatever succeeded; formal releases are
+          # tag-driven and all-or-nothing (see release.yml). Anything other than
+          # success or failure -- cancelled, skipped -- publishes nothing.
+          #
+          # Dropping the draft is this job's own tag and nothing else; finished
+          # releases are never touched here.
+          if [ "${BUILD_RESULT}" != "success" ] && [ "${BUILD_RESULT}" != "failure" ]; then
+              gh release delete "${TAG}" --yes --cleanup-tag || true
+              echo "build was ${BUILD_RESULT}, dropped the empty draft"
+              exit 0
+          fi
+          if [ "${count}" -eq 0 ]; then
+              gh release delete "${TAG}" --yes --cleanup-tag || true
+              echo "Error: no images to publish"
+              exit 1
+          fi
+          title="Mixtile OS ${TAG}"
+          [ "${BUILD_RESULT}" == "success" ] || title="${title} (partial)"
+          gh release edit "${TAG}" --title "${title}" --draft=false --prerelease
+          echo "### [${TAG}](${{ github.server_url }}/${{ github.repository }}/releases/tag/${TAG}) — ${count} image(s)" \
               >> "${GITHUB_STEP_SUMMARY}"
+
+  # Artifacts here are job-to-job transport, never a deliverable. Leaving them
+  # behind is what filled the repository's artifact storage and made unrelated
+  # uploads fail, so every run cleans up after itself -- including failed ones.
+  cleanup:
+    runs-on: ubuntu-24.04
+    needs: [prepare, rootfs, kernel, build, publish]
+    name: Delete run artifacts
+    if: always()
+    permissions:
+      actions: write
+    steps:
+      - name: Delete every artifact this run created
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          # pipefail so a failed listing cannot read as "nothing left to delete".
+          set -euo pipefail
+          # Listed by run id, not by name: nothing else in the repository can be
+          # reached this way, and no naming convention has to stay in sync.
+          list() {
+              gh api --paginate \
+                  "/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts" \
+                  --jq '.artifacts[] | "\(.id)\t\(.size_in_bytes)\t\(.name)"'
+          }
+
+          artifacts="$(list)"
+          total=0
+          failed=0
+          while IFS="$(printf '\t')" read -r id size name; do
+              [ -n "${id}" ] || continue
+              if gh api -X DELETE "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${id}"; then
+                  echo "deleted ${name} (${size} bytes)"
+                  total=$((total + size))
+              else
+                  echo "failed to delete ${name} (id ${id})"
+                  failed=$((failed + 1))
+              fi
+          done <<< "${artifacts}"
+
+          remaining="$(list | wc -l | tr -d ' ')"
+          printf '### Artifact cleanup\n\nFreed %s MiB, %s left, %s delete(s) failed.\n' \
+              "$((total / 1048576))" "${remaining}" "${failed}" >> "${GITHUB_STEP_SUMMARY}"
+          [ "${remaining}" -eq 0 ] || { echo "Error: ${remaining} artifact(s) left"; exit 1; }

@@ -74,6 +74,8 @@ jobs:
       - name: Build rootfs
         run: sudo ./build.sh --suite=${{ matrix.suite }} --flavor=${{ matrix.flavor }} --rootfs-only
 
+      # Job-to-job transport only: the cleanup job deletes it when the run ends,
+      # and retention-days is the backstop for when that does not happen.
       - name: Upload rootfs tarball
         uses: actions/upload-artifact@v7
         with:
@@ -81,6 +83,7 @@ jobs:
           path: build/*.rootfs.tar.zst
           if-no-files-found: error
           compression-level: 0
+          retention-days: 1
 
   kernel:
     runs-on: ubuntu-24.04
@@ -110,6 +113,7 @@ jobs:
             !build/linux-libc-dev_*.deb
           if-no-files-found: error
           compression-level: 0
+          retention-days: 1
 
   build:
     runs-on: ubuntu-24.04
@@ -170,14 +174,6 @@ jobs:
           gh release upload "${GITHUB_REF_NAME}" \
               images/*.img.xz images/*.img.xz.sha256 --clobber
 
-      - name: Upload build log
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: log-${{ matrix.board }}-${{ matrix.suite }}-${{ matrix.flavor }}
-          path: build/logs/*.log
-          if-no-files-found: warn
-
   # Only a complete image set is published; otherwise the draft stays for
   # inspection and the failed board can be re-run into it.
   publish:
@@ -196,3 +192,48 @@ jobs:
           gh release edit "${GITHUB_REF_NAME}" --draft=false --latest
           echo "### [${GITHUB_REF_NAME}](${{ github.server_url }}/${{ github.repository }}/releases/tag/${GITHUB_REF_NAME})" \
               >> "${GITHUB_STEP_SUMMARY}"
+
+  # Artifacts here are job-to-job transport, never a deliverable. Leaving them
+  # behind is what filled the repository's artifact storage and made unrelated
+  # uploads fail, so every run cleans up after itself -- including failed ones.
+  cleanup:
+    runs-on: ubuntu-24.04
+    needs: [prepare_release, rootfs, kernel, build, publish]
+    name: Delete run artifacts
+    if: always()
+    permissions:
+      actions: write
+    steps:
+      - name: Delete every artifact this run created
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          # pipefail so a failed listing cannot read as "nothing left to delete".
+          set -euo pipefail
+          # Listed by run id, not by name: nothing else in the repository can be
+          # reached this way, and no naming convention has to stay in sync.
+          list() {
+              gh api --paginate \
+                  "/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts" \
+                  --jq '.artifacts[] | "\(.id)\t\(.size_in_bytes)\t\(.name)"'
+          }
+
+          artifacts="$(list)"
+          total=0
+          failed=0
+          while IFS="$(printf '\t')" read -r id size name; do
+              [ -n "${id}" ] || continue
+              if gh api -X DELETE "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${id}"; then
+                  echo "deleted ${name} (${size} bytes)"
+                  total=$((total + size))
+              else
+                  echo "failed to delete ${name} (id ${id})"
+                  failed=$((failed + 1))
+              fi
+          done <<< "${artifacts}"
+
+          remaining="$(list | wc -l | tr -d ' ')"
+          printf '### Artifact cleanup\n\nFreed %s MiB, %s left, %s delete(s) failed.\n' \
+              "$((total / 1048576))" "${remaining}" "${failed}" >> "${GITHUB_STEP_SUMMARY}"
+          [ "${remaining}" -eq 0 ] || { echo "Error: ${remaining} artifact(s) left"; exit 1; }
