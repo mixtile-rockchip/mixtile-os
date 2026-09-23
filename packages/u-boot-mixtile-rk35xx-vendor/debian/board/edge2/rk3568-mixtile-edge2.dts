@@ -1,7 +1,7 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
 /*
- * SPDX-License-Identifier:     GPL-2.0+
+ * Copyright (c) 2026 Mixtile Limited
  *
- * (C) Copyright 2020 Rockchip Electronics Co., Ltd
  */
 
 /dts-v1/;
@@ -13,7 +13,7 @@
 / {
 
 	model = "Mixtile Edge 2";
-	compatible = "focalcrest,mixtile-edge2", "rockchip,rk3568";
+	compatible = "mixtile,edge2", "rockchip,rk3568";
 
 	leds: leds {
 		compatible = "gpio-leds";
@@ -573,12 +573,6 @@
 	u-boot,dm-pre-reloc;
 	vpcie3v3-supply = <&vcc3v3_pcie>;
 	reset-gpios = <&gpio2 RK_PD6 GPIO_ACTIVE_HIGH>;
-	status = "okay";
-	rockchip,bifurcation;
-};
-
-&pcie30phy {
-	u-boot,dm-pre-reloc;
 	status = "okay";
 };
 

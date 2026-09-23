@@ -1,0 +1,51 @@
+From: Mixtile <support@mixtile.com>
+Date: Sat, 20 Sep 2026 00:00:00 +0000
+Subject: [PATCH] rockchip: boot automatically from eMMC only
+
+The vendor BOOT_TARGET_DEVICES order is USB, SD, NVMe x2, SCSI, eMMC, MTD,
+RKNAND, PXE, DHCP, so eMMC is the fifth target the distro boot framework
+tries. Every normal eMMC boot therefore runs "usb start", probes the SD
+slot, and runs "pci enum" plus "nvme scan" first. On this SoC family the
+PCIe link training alone costs about 720ms when no endpoint answers and
+over 1.2s when one does, because rk_pcie_link_up() waits 200ms for
+T_PVPERL, retries for 500ms, and then sleeps a further 1000ms once the
+link is up.
+
+Mixtile products boot from eMMC, so make eMMC the only automatic boot
+target. This only trims the generated boot_targets and bootcmd_<target>
+list: BOOTENV_SHARED_MMC, _PCI, _USB, _SCSI and _NVME are emitted from
+their own CONFIG_* symbols, so mmc_boot, usb_boot, nvme_boot, nvme_init
+and boot_pci_enum all remain in the environment, and the mmc, usb, pci
+and nvme commands are untouched. Everything stays available from the
+U-Boot prompt; it just no longer runs unattended.
+
+diff --git a/include/configs/rockchip-common.h b/include/configs/rockchip-common.h
+index e1c4779b..dd6839c3 100644
+--- a/include/configs/rockchip-common.h
++++ b/include/configs/rockchip-common.h
+@@ -62,7 +62,7 @@
+ 	BOOT_TARGET_DEVICES_references_MTD_without_CONFIG_CMD_MTD_BLK
+ #endif
+ 
+-/* First try to boot from SD (index 1), then NVME (if CMD_NVME is enabled), then SCSI (if CMD_SCSI is enabled),then eMMC (index 0) */
++/* Mixtile: eMMC (index 0) is the only automatic boot target */
+ #if CONFIG_IS_ENABLED(CMD_MMC)
+ 	#define BOOT_TARGET_EMMC(func)	func(MMC, mmc, 0)
+ 	#define BOOT_TARGET_SD(func)	func(MMC, mmc, 1)
+@@ -119,15 +119,7 @@
+ #endif
+ 
+ #define BOOT_TARGET_DEVICES(func) \
+-	BOOT_TARGET_USB(func) \
+-	BOOT_TARGET_SD(func) \
+-	BOOT_TARGET_NVME(func) \
+-	BOOT_TARGET_SCSI(func) \
+-	BOOT_TARGET_EMMC(func) \
+-	BOOT_TARGET_MTD(func) \
+-	BOOT_TARGET_RKNAND(func) \
+-	BOOT_TARGET_PXE(func) \
+-	BOOT_TARGET_DHCP(func)
++	BOOT_TARGET_EMMC(func)
+ 
+ 
+ #ifdef CONFIG_ARM64

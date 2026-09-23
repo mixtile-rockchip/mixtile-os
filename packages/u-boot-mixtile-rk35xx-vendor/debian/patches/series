@@ -1,3 +1,6 @@
 # Build fix: FIT generator srctree handling for out-of-tree (O=) builds.
 0004-fit-generator-fix-out-of-tree-srctree.patch
 0005-decode-bl31-use-python3.patch
+
+# Product policy: eMMC is the only automatic boot target.
+0006-rockchip-boot-from-emmc-only.patch
