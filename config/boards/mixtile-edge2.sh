@@ -71,7 +71,7 @@ SOURCES
 
     local archive_packages=(
         librga2 librockchip-mpp1 librockchip-vpu0 librknnrt rockchip-multimedia-config
-        rockchip-mpp-demos ffmpeg-rockchip gstreamer1.0-rockchip1
+        rockchip-mpp-demos ffmpeg-rockchip gstreamer1.0-rockchip1 firmware-ap6275s
     )
     retry 3 chroot "${rootfs}" apt-get -y update
     chroot "${rootfs}" apt-get -y --dry-run install "${archive_packages[@]}" > /dev/null
