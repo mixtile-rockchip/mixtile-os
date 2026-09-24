@@ -49,7 +49,7 @@ config_image_hook__mixtile-blade3() {
     # os-release, which is right for all four suites.
     cat > "${rootfs}/usr/share/u-boot-menu/conf.d/mixtile.conf" <<CONF
 U_BOOT_UPDATE="true"
-U_BOOT_TIMEOUT="20"
+U_BOOT_TIMEOUT="10"
 U_BOOT_PARAMETERS="\$(cat /etc/kernel/cmdline)"
 U_BOOT_FDT="${BOARD_FDT}"
 U_BOOT_FDT_DIR="/usr/lib/linux-image-"
