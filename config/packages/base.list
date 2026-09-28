@@ -26,5 +26,4 @@ gpiod
 mmc-utils
 u-boot-tools
 lm-sensors
-smartmontools
 v4l-utils
