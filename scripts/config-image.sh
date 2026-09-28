@@ -285,5 +285,7 @@ ln -s /run/systemd/resolve/stub-resolv.conf "${chroot_dir}/etc/resolv.conf"
 # into the image.
 rm -f "${chroot_dir}/etc/.resolv.conf.systemd-resolved.bak"
 
+echo "BUILD_ID=$(date +'%Y-%m-%d')" >> "${chroot_dir}/etc/os-release"
+
 sed 's/^/    /' "${chroot_dir}/boot/extlinux/extlinux.conf"
 echo "==> configured rootfs ready at ${chroot_dir}"
