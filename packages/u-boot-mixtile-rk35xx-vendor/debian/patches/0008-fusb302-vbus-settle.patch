@@ -1,0 +1,84 @@
+From: Mixtile <support@mixtile.com>
+Date: Wed, 14 Oct 2026 00:00:00 +0000
+Subject: [PATCH] usb: power_delivery: fusb302: improve early PD negotiation reliability
+
+1. Wait for VBUSOK to settle.
+
+   fusb302's init latches chip->vbus_present from STATUS0.VBUSOK, and
+   tcpm_get_vbus() reports that cached flag to tcpm_poll_event(), which returns
+   immediately when it is clear.  VBUSOK samples VBUS against the vSafe5V window
+   and needs a moment to assert after the software reset and the power-up that
+   precede the read; U-Boot runs those I2C transfers back to back with no
+   scheduling in between, so the first read can land before the comparator is
+   valid and latch 0.  The port is then never polled and PD is skipped for the
+   whole boot.  Re-read for up to 50ms.
+
+2. Re-poll instead of polling once.
+
+   probe() ends with a single tcpm_poll_event(), which covers at most 1s.
+   Repeat it a bounded number of times, breaking as soon as the port reports
+   SNK_READY, so a source that needs longer is not mistaken for a failure.  The
+   bound keeps the total inside the source's tNoResponse budget from attach.
+
+diff --git a/drivers/power/power_delivery/fusb302.c b/drivers/power/power_delivery/fusb302.c
+index 395455d0..35d0efd1 100644
+--- a/drivers/power/power_delivery/fusb302.c
++++ b/drivers/power/power_delivery/fusb302.c
+@@ -247,6 +247,7 @@ static int tcpm_init(struct tcpc_dev *dev)
+ 	struct fusb302_chip *chip = container_of(dev, struct fusb302_chip,
+ 						 tcpc_dev);
+ 	int ret = 0;
++	int k;
+ 	u8 data;
+ 
+ 	ret = fusb302_sw_reset(chip);
+@@ -264,6 +265,21 @@ static int tcpm_init(struct tcpc_dev *dev)
+ 	ret = fusb302_i2c_read(chip, FUSB_REG_STATUS0, &data);
+ 	if (ret)
+ 		return ret;
++	/*
++	 * VBUSOK samples VBUS against the vSafe5V window and takes a moment to
++	 * assert after the reset and power-up above.  U-Boot runs these I2C
++	 * transfers back to back with no scheduling in between, so the first
++	 * read can land before the comparator is valid and latch
++	 * vbus_present = 0 -- which then makes tcpm_poll_event() return
++	 * immediately and skips PD for the whole boot.  Re-read for up to 50ms.
++	 */
++	for (k = 0; k < 10; k++) {
++		if (data & FUSB_REG_STATUS0_VBUSOK)
++			break;
++		mdelay(5);
++		if (fusb302_i2c_read(chip, FUSB_REG_STATUS0, &data))
++			break;
++	}
+ 	chip->vbus_present = !!(data & FUSB_REG_STATUS0_VBUSOK);
+ 	ret = fusb302_i2c_read(chip, FUSB_REG_DEVICE_ID, &data);
+ 	if (ret)
+@@ -1448,6 +1464,7 @@ static int fusb302_probe(struct udevice *dev)
+ {
+ 	struct fusb302_chip *chip = dev_get_priv(dev);
+ 	int ret = 0;
++	int i;
+ 
+ 	chip->udev = dev;
+ 
+@@ -1483,7 +1500,17 @@ static int fusb302_probe(struct udevice *dev)
+ 		return PTR_ERR(chip->tcpm_port);
+ 	}
+ 
+-	tcpm_poll_event(chip->tcpm_port);
++	/*
++	 * A single poll already covers up to 1s and returns early once the port
++	 * reaches SNK_READY, which is where a fresh attach normally lands.
++	 * Repeat a bounded number of times for sources that need longer, while
++	 * staying inside the source's tNoResponse budget from attach.
++	 */
++	for (i = 0; i < 4; i++) {
++		tcpm_poll_event(chip->tcpm_port);
++		if (tcpm_get_online(chip->tcpm_port))
++			break;
++	}
+ 
+ 	return 0;
+ }
+

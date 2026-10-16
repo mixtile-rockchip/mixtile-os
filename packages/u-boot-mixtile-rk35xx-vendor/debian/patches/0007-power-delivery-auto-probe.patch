@@ -1,0 +1,129 @@
+From: Mixtile <support@mixtile.com>
+Date: Wed, 14 Oct 2026 00:00:00 +0000
+Subject: [PATCH] power: power_delivery: probe sink PD ports during early boot
+
+Nothing in the boot path probes UCLASS_PD: the only callers are the charge_pd
+command and the battery charger drivers, so the Type-C controller is bound but
+never brought up on a board that has no charger IC.
+
+That matters when the board is powered through its USB-C port.  USB PD expects
+an answer to the source's Source_Capabilities within roughly five seconds of
+attach; until the port is up U-Boot does not answer, and a source that gives up
+hard-resets and drops VBUS.
+
+Add power_delivery_probe_early() and call it from board_init(), alongside
+clks_probe() and regulators_enable_boot_on(), which are the same kind of
+"bring this uclass up before the OS" step.  A port is probed only when it
+describes itself as a sink; self-powered ports and ports that may also source
+are left to the OS, so boards with another supply keep their behaviour.
+
+diff --git a/arch/arm/mach-rockchip/board.c b/arch/arm/mach-rockchip/board.c
+index 5cfbe5a8..904ecf14 100644
+--- a/arch/arm/mach-rockchip/board.c
++++ b/arch/arm/mach-rockchip/board.c
+@@ -40,6 +40,7 @@
+ #include <dm/uclass-internal.h>
+ #include <dm/root.h>
+ #include <power/charge_display.h>
++#include <power/power_delivery/power_delivery.h>
+ #include <power/regulator.h>
+ #include <optee_include/OpteeClientInterface.h>
+ #include <optee_include/OpteeClientApiLib.h>
+@@ -545,6 +546,9 @@ int board_init(void)
+ #ifdef CONFIG_DM_REGULATOR
+ 	regulators_enable_boot_on(is_hotkey(HK_REGULATOR));
+ #endif
++#ifdef CONFIG_DM_POWER_DELIVERY
++	power_delivery_probe_early();
++#endif
+ #ifdef CONFIG_ROCKCHIP_IO_DOMAIN
+ 	io_domain_init();
+ #endif
+diff --git a/drivers/power/power_delivery/power_delivery_uclass.c b/drivers/power/power_delivery/power_delivery_uclass.c
+index a6acf4c9..d21e2aff 100644
+--- a/drivers/power/power_delivery/power_delivery_uclass.c
++++ b/drivers/power/power_delivery/power_delivery_uclass.c
+@@ -4,6 +4,7 @@
+  * SPDX-License-Identifier:     GPL-2.0+
+  */
+ 
++#include <common.h>
+ #include <errno.h>
+ #include <dm.h>
+ #include <dm/device-internal.h>
+@@ -25,6 +26,52 @@ int power_delivery_get_data(struct udevice *dev, struct power_delivery_data *pd_
+ 	return 0;
+ }
+ 
++static bool power_delivery_early_probe_needed(struct udevice *dev)
++{
++	ofnode node = dev_read_subnode(dev, "connector");
++	const char *role;
++
++	if (!ofnode_valid(node))
++		return false;
++
++	if (ofnode_read_bool(node, "self-powered"))
++		return false;
++
++	role = ofnode_read_string(node, "power-role");
++	if (!role || strcmp(role, "sink"))
++		return false;
++
++	return true;
++}
++
++int power_delivery_probe_early(void)
++{
++	struct udevice *dev;
++	struct uclass *uc;
++	int ret;
++
++	ret = uclass_get(UCLASS_PD, &uc);
++	if (ret)
++		return ret;
++
++	uclass_foreach_dev(dev, uc) {
++		if (!power_delivery_early_probe_needed(dev))
++			continue;
++
++		debug("PD: probing %s\n", dev->name);
++
++		/*
++		 * One port failing to come up must not keep the rest of the
++		 * board from booting, so report it and carry on.
++		 */
++		ret = device_probe(dev);
++		if (ret)
++			printf("PD: %s probe failed (%d)\n", dev->name, ret);
++	}
++
++	return 0;
++}
++
+ UCLASS_DRIVER(power_delivery) = {
+ 	.id		= UCLASS_PD,
+ 	.name		= "power_delivery",
+diff --git a/include/power/power_delivery/power_delivery.h b/include/power/power_delivery/power_delivery.h
+index 019ace02..418d80bc 100644
+--- a/include/power/power_delivery/power_delivery.h
++++ b/include/power/power_delivery/power_delivery.h
+@@ -25,11 +25,17 @@ struct power_delivery_data {
+ 
+ #ifdef CONFIG_DM_POWER_DELIVERY
+ int power_delivery_get_data(struct udevice *dev, struct power_delivery_data *pd_data);
++int power_delivery_probe_early(void);
+ #else
+ inline int power_delivery_get_data(struct udevice *dev,
+ 				   struct power_delivery_data *pd_data)
+ {
+ 	return -ENOSYS;
+ }
++
++inline int power_delivery_probe_early(void)
++{
++	return -ENOSYS;
++}
+ #endif
+ #endif
+

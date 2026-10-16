@@ -1,0 +1,38 @@
+From: Mixtile <support@mixtile.com>
+Date: Tue, 14 Oct 2026 00:00:00 +0000
+Subject: [PATCH] usb: power_delivery: fusb302: keep the transceiver powered on handoff
+
+U-Boot hands the port to the OS with the PD contract still live.  Powering the
+transceiver down at that point leaves the chip unable to transmit, so it cannot
+answer the GoodCRC for any message the source sends after U-Boot stops polling.
+A source that does send one reads the silence as a dead link and drops VBUS to
+vSafe0V, which resets a board running from that port.
+
+PWR_MEDIUM clears the TX bit and PWR_HIGH clears the oscillator the BMC PHY
+needs, so neither is usable here.  Skip the transition while a contract is up.
+
+--- a/drivers/power/power_delivery/fusb302.c
++++ b/drivers/power/power_delivery/fusb302.c
+@@ -965,12 +965,19 @@
+ 	int ret = 0;
+ 	unsigned int reg;
+ 
++	/*
++	 * Keep the transceiver powered while a contract is live.  PWR_MEDIUM
++	 * clears the TX bit, so the chip cannot answer the GoodCRC for anything
++	 * the source sends after U-Boot stops polling, and a source that does
++	 * send something treats the silence as a dead link and drops VBUS.
++	 */
++	if (attached && pd_capable)
++		return 0;
++
+ 	ret = fusb302_mask_interrupt(chip);
+ 	if (ret)
+ 		return ret;
+-	if (attached && pd_capable)
+-		reg = FUSB_REG_POWER_PWR_MEDIUM;
+-	else if (attached)
++	if (attached)
+ 		reg = FUSB_REG_POWER_PWR_LOW;
+ 	else
+ 		reg = 0;

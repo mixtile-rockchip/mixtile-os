@@ -4,3 +4,13 @@
 
 # Product policy: eMMC is the only automatic boot target.
 0006-rockchip-boot-from-emmc-only.patch
+
+# Probe USB-C PD ports before the OS starts, so a board powered from its
+# Type-C port does not lose VBUS to the PD source five second timeout.
+0007-power-delivery-auto-probe.patch
+
+# fusb302: let VBUSOK settle and poll more than once.
+0008-fusb302-vbus-settle.patch
+
+# Keep the FUSB302 transceiver alive across the U-Boot -> OS handoff.
+0009-fusb302-keep-transceiver-powered.patch
