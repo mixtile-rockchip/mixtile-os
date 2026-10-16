@@ -107,8 +107,22 @@ jobs:
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ${BUILD_DEPS}
 
-      # binfmt registration is host kernel state, not image content, and
-      # qemu-user-static only registers it as a side effect of being installed.
+      # binfmt registration is host kernel state, not image content. On noble
+      # qemu-user-static ships only /usr/lib/binfmt.d/, which
+      # systemd-binfmt.service reads at boot -- and apt installs the package
+      # after that has already run, so nothing registers the handler until the
+      # service is asked to reload.
+      - name: Register the arm64 binfmt handler
+        run: |
+          set -eu
+          f=/proc/sys/fs/binfmt_misc/qemu-aarch64
+          if [ ! -f "${f}" ]; then
+            sudo systemctl restart systemd-binfmt.service || true
+          fi
+          if [ ! -f "${f}" ]; then
+            sudo grep -v "^#" /usr/lib/binfmt.d/qemu-aarch64.conf | sudo tee /proc/sys/fs/binfmt_misc/register >/dev/null
+          fi
+
       - name: Verify arm64 binfmt handler
         run: |
           set -eu
@@ -220,6 +234,19 @@ jobs:
         run: |
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ${BUILD_DEPS}
+
+      # Same registration as the rootfs job: the image assembly runs arm64
+      # binaries through qemu as well.
+      - name: Register the arm64 binfmt handler
+        run: |
+          set -eu
+          f=/proc/sys/fs/binfmt_misc/qemu-aarch64
+          if [ ! -f "${f}" ]; then
+            sudo systemctl restart systemd-binfmt.service || true
+          fi
+          if [ ! -f "${f}" ]; then
+            sudo grep -v "^#" /usr/lib/binfmt.d/qemu-aarch64.conf | sudo tee /proc/sys/fs/binfmt_misc/register >/dev/null
+          fi
 
       - name: Verify arm64 binfmt handler
         run: |
