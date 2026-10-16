@@ -1,0 +1,26 @@
+From: Mixtile <support@mixtile.com>
+Date: Tue, 14 Oct 2026 00:00:00 +0000
+Subject: [PATCH] arm64: dts: rockchip: blade3: raise TYPEC1 sink capability to 20V/3A
+
+TYPEC1 is the board's DC input: its VBUS is the only path into the
+VCC12V~20V_DCIN rail, through a 30V/4A MOSFET and a 24V/3A fuse, and the
+power tree specifies 20V at 3A for it.
+
+The connector describes 1A on every sink PDO, so tcpm settles on 20V/1A --
+20W on a rail specified for 60W. Raise both sink PDOs to 3000mA and drop the
+PPS APDO; leave op-sink-microwatt, power-role and data-role alone.
+
+--- a/arch/arm64/boot/dts/rockchip/rk3588-mixtile-blade3.dts
++++ b/arch/arm64/boot/dts/rockchip/rk3588-mixtile-blade3.dts
+@@ -790,9 +790,8 @@
+ 			faster-pd-negotiation;
+ 			op-sink-microwatt = <15000000>;
+ 			sink-pdos =
+-				<PDO_FIXED(5000, 1000, PDO_FIXED_USB_COMM)
+-				PDO_VAR(5000, 20000, 1000)
+-				PDO_PPS_APDO(5000, 20000, 1000)>;
++				<PDO_FIXED(5000, 3000, PDO_FIXED_USB_COMM)
++				PDO_VAR(5000, 20000, 3000)>;
+ 			source-pdos =
+ 				<PDO_FIXED(5000, 1000, PDO_FIXED_USB_COMM)>;
+ 
