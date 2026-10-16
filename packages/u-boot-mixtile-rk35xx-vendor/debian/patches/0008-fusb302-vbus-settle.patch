@@ -1,0 +1,59 @@
+From: Mixtile <support@mixtile.com>
+Date: Wed, 14 Oct 2026 00:00:00 +0000
+Subject: [PATCH] usb: power_delivery: fusb302: improve early PD negotiation reliability
+
+The first VBUSOK read can latch 0 and skip PD for the whole boot, and a
+single tcpm_poll_event() only covers about a second.
+
+Re-read VBUSOK for up to 50ms and poll a few times, breaking out as soon as
+the port reports SNK_READY.
+
+diff --git a/drivers/power/power_delivery/fusb302.c b/drivers/power/power_delivery/fusb302.c
+index 395455d..6eaad0c 100644
+--- a/drivers/power/power_delivery/fusb302.c
++++ b/drivers/power/power_delivery/fusb302.c
+@@ -247,6 +247,7 @@ static int tcpm_init(struct tcpc_dev *dev)
+ 	struct fusb302_chip *chip = container_of(dev, struct fusb302_chip,
+ 						 tcpc_dev);
+ 	int ret = 0;
++	int k;
+ 	u8 data;
+ 
+ 	ret = fusb302_sw_reset(chip);
+@@ -264,6 +265,14 @@ static int tcpm_init(struct tcpc_dev *dev)
+ 	ret = fusb302_i2c_read(chip, FUSB_REG_STATUS0, &data);
+ 	if (ret)
+ 		return ret;
++	/* VBUSOK may not have settled yet; re-read for up to 50ms. */
++	for (k = 0; k < 10; k++) {
++		if (data & FUSB_REG_STATUS0_VBUSOK)
++			break;
++		mdelay(5);
++		if (fusb302_i2c_read(chip, FUSB_REG_STATUS0, &data))
++			break;
++	}
+ 	chip->vbus_present = !!(data & FUSB_REG_STATUS0_VBUSOK);
+ 	ret = fusb302_i2c_read(chip, FUSB_REG_DEVICE_ID, &data);
+ 	if (ret)
+@@ -1448,6 +1457,7 @@ static int fusb302_probe(struct udevice *dev)
+ {
+ 	struct fusb302_chip *chip = dev_get_priv(dev);
+ 	int ret = 0;
++	int i;
+ 
+ 	chip->udev = dev;
+ 
+@@ -1483,7 +1493,12 @@ static int fusb302_probe(struct udevice *dev)
+ 		return PTR_ERR(chip->tcpm_port);
+ 	}
+ 
+-	tcpm_poll_event(chip->tcpm_port);
++	/* One poll covers ~1s; retry briefly for slower sources. */
++	for (i = 0; i < 4; i++) {
++		tcpm_poll_event(chip->tcpm_port);
++		if (tcpm_get_online(chip->tcpm_port))
++			break;
++	}
+ 
+ 	return 0;
+ }

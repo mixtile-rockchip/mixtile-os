@@ -1,0 +1,32 @@
+From: Mixtile <support@mixtile.com>
+Date: Tue, 14 Oct 2026 00:00:00 +0000
+Subject: [PATCH] usb: power_delivery: fusb302: keep the transceiver powered on handoff
+
+Powering the transceiver down while a contract is live leaves the chip unable
+to answer the source's GoodCRC, and a source that sends anything reads the
+silence as a dead link and drops VBUS.
+
+Skip the power-down while attached and PD-capable.
+
+diff --git a/drivers/power/power_delivery/fusb302.c b/drivers/power/power_delivery/fusb302.c
+index 6eaad0c..3d9c32a 100644
+--- a/drivers/power/power_delivery/fusb302.c
++++ b/drivers/power/power_delivery/fusb302.c
+@@ -958,12 +958,14 @@ static int fusb302_enter_low_power_mode(struct tcpc_dev *dev,
+ 	int ret = 0;
+ 	unsigned int reg;
+ 
++	/* PWR_MEDIUM clears TX; stay powered while a contract is live. */
++	if (attached && pd_capable)
++		return 0;
++
+ 	ret = fusb302_mask_interrupt(chip);
+ 	if (ret)
+ 		return ret;
+-	if (attached && pd_capable)
+-		reg = FUSB_REG_POWER_PWR_MEDIUM;
+-	else if (attached)
++	if (attached)
+ 		reg = FUSB_REG_POWER_PWR_LOW;
+ 	else
+ 		reg = 0;

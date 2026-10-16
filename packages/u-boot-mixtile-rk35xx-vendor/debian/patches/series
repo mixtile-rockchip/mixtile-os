@@ -4,3 +4,12 @@
 
 # Product policy: eMMC is the only automatic boot target.
 0006-rockchip-boot-from-emmc-only.patch
+
+# Probe sink PD ports before the OS, so a Type-C-powered board keeps VBUS.
+0007-power-delivery-auto-probe.patch
+
+# fusb302: wait for VBUSOK and poll more than once.
+0008-fusb302-vbus-settle.patch
+
+# Keep the FUSB302 transceiver powered across the handoff.
+0009-fusb302-keep-transceiver-powered.patch
