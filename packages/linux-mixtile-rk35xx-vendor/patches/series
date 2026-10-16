@@ -1,5 +1,11 @@
 # quilt series for the vendor kernel, applied by scripts/build-kernel.sh before
 # the config is merged -- a patch may add Kconfig symbols a fragment then sets.
 #
-# Empty: this line needs no patches today. Armbian carries only three files of
-# its own on top of the same branch, so the expected volume here is low.
+# Kept deliberately small: everything that can go upstream does, and only
+# changes upstream will not take live here.
+
+# Blade 3 TYPEC1 is the DC input. Upstream's connector description asks for
+# 1A per sink PDO, so tcpm clamps the contract at 20V/1A (20W) on a rail the
+# hardware specifies for 60W. Carried here until the same change lands
+# upstream.
+0003-arm64-dts-rockchip-blade3-raise-typec1-pd-capability.patch
