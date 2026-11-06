@@ -13,7 +13,7 @@ export UBOOT_PACKAGE=u-boot-mixtile-rk35xx-vendor
 export UBOOT_RULES_TARGET=mixtile-core3588e-rk3588
 export UBOOT_BINARY_PACKAGE=u-boot-mixtile-core3588e
 
-# Device tree from the vendor kernel package.
+# V1 DTB; U-Boot overrides fdtfile on V2 hardware.
 export BOARD_FDT="rockchip/rk3588-mixtile-core3588e.dtb"
 
 # ttyS2 at 1.5M is the RK3588 debug UART. consoleblank=0 keeps the console
@@ -42,7 +42,6 @@ config_image_hook__mixtile-core3588e() {
 U_BOOT_UPDATE="true"
 U_BOOT_TIMEOUT="10"
 U_BOOT_PARAMETERS="\$(cat /etc/kernel/cmdline)"
-U_BOOT_FDT="${BOARD_FDT}"
 U_BOOT_FDT_DIR="/usr/lib/linux-image-"
 CONF
 

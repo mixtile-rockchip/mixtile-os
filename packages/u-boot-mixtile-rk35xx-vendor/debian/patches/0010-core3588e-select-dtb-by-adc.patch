@@ -1,0 +1,50 @@
+--- a/board/rockchip/evb_rk3588/evb_rk3588.c
++++ b/board/rockchip/evb_rk3588/evb_rk3588.c
+@@ -16,6 +16,47 @@
+ #define SARADC_ADDR	"saradc@fec10000"
+ #define HW_ID_CHANNEL	5
+ 
++#define MIXTILE_CORE3588E_FDT		"rockchip/rk3588-mixtile-core3588e.dtb"
++#define MIXTILE_CORE3588E_V2_FDT	"rockchip/rk3588-mixtile-core3588e-v2.dtb"
++#define MIXTILE_CORE3588E_V2_ADC_MIN	400
++#define MIXTILE_CORE3588E_V2_ADC_MAX	900
++
++#if CONFIG_IS_ENABLED(ADC)
++int rk_board_late_init(void)
++{
++	unsigned int hw_id;
++	int ret;
++
++	if (!of_machine_is_compatible("mixtile,core3588e"))
++		return 0;
++
++	ret = adc_channel_single_shot(SARADC_ADDR, HW_ID_CHANNEL, &hw_id);
++	if (ret) {
++		printf("Mixtile: ADC%d read failed (%d), assuming V1\n",
++		       HW_ID_CHANNEL, ret);
++		env_set("fdtfile", MIXTILE_CORE3588E_FDT);
++		return 0;
++	}
++
++	if (hw_id >= MIXTILE_CORE3588E_V2_ADC_MIN &&
++	    hw_id <= MIXTILE_CORE3588E_V2_ADC_MAX) {
++		printf("Mixtile: CORE3588E V2 detected (ADC%d=%u)\n",
++		       HW_ID_CHANNEL, hw_id);
++		env_set("fdtfile", MIXTILE_CORE3588E_V2_FDT);
++	} else {
++		if (hw_id > 100 && hw_id < MIXTILE_CORE3588E_V2_ADC_MIN)
++			printf("Mixtile: unexpected ADC%d=%u, assuming V1\n",
++			       HW_ID_CHANNEL, hw_id);
++		else
++			printf("Mixtile: CORE3588E V1 detected (ADC%d=%u)\n",
++			       HW_ID_CHANNEL, hw_id);
++		env_set("fdtfile", MIXTILE_CORE3588E_FDT);
++	}
++
++	return 0;
++}
++#endif
++
+ #define countof(x) (sizeof(x) / sizeof(x[0]))
+ 
+ struct variant_def {

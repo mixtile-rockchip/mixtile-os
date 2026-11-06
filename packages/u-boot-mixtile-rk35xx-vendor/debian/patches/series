@@ -13,3 +13,5 @@
 
 # Keep the FUSB302 transceiver powered across the handoff.
 0009-fusb302-keep-transceiver-powered.patch
+
+0010-core3588e-select-dtb-by-adc.patch

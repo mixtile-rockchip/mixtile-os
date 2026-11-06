@@ -1,0 +1,494 @@
+diff --git a/arch/arm64/boot/dts/rockchip/overlay/Makefile b/arch/arm64/boot/dts/rockchip/overlay/Makefile
+--- a/arch/arm64/boot/dts/rockchip/overlay/Makefile
++++ b/arch/arm64/boot/dts/rockchip/overlay/Makefile
+@@ -117,6 +117,8 @@ dtbo-$(CONFIG_ARCH_ROCKCHIP) += \
+ 	mixtile-blade3-sata2.dtbo \
+ 	mixtile-core3588e-camera-imx219-cam0.dtbo \
+ 	mixtile-core3588e-camera-imx219-cam1.dtbo \
++	mixtile-core3588e-camera-imx415-cam0.dtbo \
++	mixtile-core3588e-camera-imx415-cam1.dtbo \
+ 	mixtile-edge2-m2-usb3.dtbo \
+ 	radxa-zero3-rpi-camera-v2.dtbo \
+ 	radxa-zero3-rpi-camera-v1.3.dtbo \
+diff --git a/arch/arm64/boot/dts/rockchip/overlay/mixtile-core3588e-camera-imx415-cam0.dts b/arch/arm64/boot/dts/rockchip/overlay/mixtile-core3588e-camera-imx415-cam0.dts
+new file mode 100644
+--- /dev/null
++++ b/arch/arm64/boot/dts/rockchip/overlay/mixtile-core3588e-camera-imx415-cam0.dts
+@@ -0,0 +1,236 @@
++/dts-v1/;
++/plugin/;
++
++#include <dt-bindings/clock/rk3588-cru.h>
++#include <dt-bindings/power/rk3588-power.h>
++#include <dt-bindings/gpio/gpio.h>
++#include <dt-bindings/pinctrl/rockchip.h>
++
++/ {
++	metadata {
++		title = "Enable IMX415 camera on CAM0";
++		compatible = "mixtile,core3588e";
++		category = "camera";
++		exclusive = "csi2_dphy0";
++		description = "Enable a Sony IMX415 camera module on CAM0.";
++	};
++
++	fragment@0 {
++		target-path = "/";
++		__overlay__ {
++			camera0_pwdn_gpio: camera0-pwdn-gpio {
++				status = "okay";
++				compatible = "regulator-fixed";
++				regulator-name = "camera0_pwdn_gpio";
++				regulator-always-on;
++				regulator-boot-on;
++				enable-active-high;
++				gpio = <&gpio1 RK_PB0 GPIO_ACTIVE_HIGH>;
++			};
++
++			i2cmux1:i2cmux1 {
++				compatible = "i2c-mux-gpio";
++				#address-cells = <1>;
++				#size-cells = <0>;
++				i2c-parent = <&i2c2>;
++				mux-gpios = <&gpio3 RK_PA2 GPIO_ACTIVE_HIGH>;
++
++				i2c_cam0: i2c@0 {
++					reg = <0>;
++					#address-cells = <1>;
++					#size-cells = <0>;
++				};
++			};
++		};
++	};
++
++	fragment@1 {
++		target = <&i2c2>;
++		__overlay__ {
++			status = "okay";
++			pinctrl-names = "default";
++			pinctrl-0 = <&i2c2m4_xfer>;
++		};
++	};
++
++	fragment@2 {
++		target = <&i2cmux1>;
++		__overlay__ {
++			status = "okay";
++		};
++	};
++
++	fragment@3 {
++		target = <&rkcif>;
++		__overlay__ {
++			status = "okay";
++		};
++	};
++
++	fragment@4 {
++		target = <&rkcif_mmu>;
++		__overlay__ {
++			status = "okay";
++		};
++	};
++
++	fragment@5 {
++		target = <&rkisp0>;
++		__overlay__ {
++			status = "okay";
++		};
++	};
++
++	fragment@6 {
++		target = <&isp0_mmu>;
++		__overlay__ {
++			status = "okay";
++		};
++	};
++
++	fragment@7 {
++		target = <&i2c_cam0>;
++		__overlay__ {
++			camera0_imx415: camera0-imx415@37 {
++				status = "okay";
++				compatible = "sony,imx415";
++				reg = <0x37>;
++				clocks = <&cru CLK_MIPI_CAMARAOUT_M0>;
++				clock-names = "xvclk";
++				pinctrl-names = "default";
++				pinctrl-0 = <&mipim1_camera0_clk>;
++				power-domains = <&power RK3588_PD_VI>;
++				rockchip,camera-module-index = <0>;
++				rockchip,camera-module-facing = "back";
++				rockchip,camera-module-name = "rpi-camera-v2";
++				rockchip,camera-module-lens-name = "default";
++
++				port {
++					camera0_imx415_out: endpoint {
++						remote-endpoint = <&csi2_dphy0_in_cam0>;
++						data-lanes = <1 2 3 4>;
++					};
++				};
++			};
++		};
++	};
++
++	fragment@8 {
++		target = <&csi2_dphy0>;
++		__overlay__ {
++			status = "okay";
++
++			ports {
++				#address-cells = <1>;
++				#size-cells = <0>;
++
++				port@0 {
++					reg = <0>;
++					#address-cells = <1>;
++					#size-cells = <0>;
++
++					csi2_dphy0_in_cam0: endpoint@1 {
++						reg = <1>;
++						remote-endpoint = <&camera0_imx415_out>;
++						data-lanes = <1 2 3 4>;
++					};
++				};
++
++				port@1 {
++					reg = <1>;
++					#address-cells = <1>;
++					#size-cells = <0>;
++
++					csi2_dphy0_out_cam0: endpoint@0 {
++						reg = <0>;
++						remote-endpoint = <&mipi2_csi2_in_cam0>;
++					};
++				};
++			};
++		};
++	};
++
++	fragment@9 {
++		target = <&csi2_dphy0_hw>;
++		__overlay__ {
++			status = "okay";
++		};
++	};
++
++	fragment@10 {
++		target = <&mipi2_csi2>;
++		__overlay__ {
++			status = "okay";
++
++			ports {
++				#address-cells = <1>;
++				#size-cells = <0>;
++
++				port@0 {
++					reg = <0>;
++					#address-cells = <1>;
++					#size-cells = <0>;
++
++					mipi2_csi2_in_cam0: endpoint@1 {
++						reg = <1>;
++						remote-endpoint = <&csi2_dphy0_out_cam0>;
++					};
++				};
++
++				port@1 {
++					reg = <1>;
++					#address-cells = <1>;
++					#size-cells = <0>;
++
++					mipi2_csi2_out_cam0: endpoint@0 {
++						reg = <0>;
++						remote-endpoint = <&rkcif_mipi_lvds2_in_cam0>;
++					};
++				};
++			};
++		};
++	};
++
++	fragment@11 {
++		target = <&rkcif_mipi_lvds2>;
++		__overlay__ {
++			status = "okay";
++
++			port {
++				rkcif_mipi_lvds2_in_cam0: endpoint {
++					remote-endpoint = <&mipi2_csi2_out_cam0>;
++				};
++			};
++		};
++	};
++
++	fragment@12 {
++		target = <&rkcif_mipi_lvds2_sditf>;
++		__overlay__ {
++			status = "okay";
++
++			port {
++				rkcif_mipi_lvds2_sditf_out: endpoint {
++					remote-endpoint = <&isp0_vir0_in_cam0>;
++				};
++			};
++		};
++	};
++
++	fragment@13 {
++		target = <&rkisp0_vir0>;
++		__overlay__ {
++			status = "okay";
++
++			port {
++				#address-cells = <1>;
++				#size-cells = <0>;
++
++				isp0_vir0_in_cam0: endpoint@0 {
++					reg = <0>;
++					remote-endpoint = <&rkcif_mipi_lvds2_sditf_out>;
++				};
++			};
++		};
++	};
++};
+diff --git a/arch/arm64/boot/dts/rockchip/overlay/mixtile-core3588e-camera-imx415-cam1.dts b/arch/arm64/boot/dts/rockchip/overlay/mixtile-core3588e-camera-imx415-cam1.dts
+new file mode 100644
+--- /dev/null
++++ b/arch/arm64/boot/dts/rockchip/overlay/mixtile-core3588e-camera-imx415-cam1.dts
+@@ -0,0 +1,236 @@
++/dts-v1/;
++/plugin/;
++
++#include <dt-bindings/clock/rk3588-cru.h>
++#include <dt-bindings/power/rk3588-power.h>
++#include <dt-bindings/gpio/gpio.h>
++#include <dt-bindings/pinctrl/rockchip.h>
++
++/ {
++	metadata {
++		title = "Enable IMX415 camera on CAM1";
++		compatible = "mixtile,core3588e";
++		category = "camera";
++		exclusive = "csi2_dphy3";
++		description = "Enable a Sony IMX415 camera module on CAM1.";
++	};
++
++	fragment@0 {
++		target-path = "/";
++		__overlay__ {
++			camera1_pwdn_gpio: camera1-pwdn-gpio {
++				status = "okay";
++				compatible = "regulator-fixed";
++				regulator-name = "camera1_pwdn_gpio";
++				regulator-always-on;
++				regulator-boot-on;
++				enable-active-high;
++				gpio = <&gpio1 RK_PB1 GPIO_ACTIVE_HIGH>;
++			};
++
++			i2cmux1:i2cmux1 {
++				compatible = "i2c-mux-gpio";
++				#address-cells = <1>;
++				#size-cells = <0>;
++				i2c-parent = <&i2c2>;
++				mux-gpios = <&gpio3 RK_PA2 GPIO_ACTIVE_HIGH>;
++
++				i2c_cam1: i2c@1 {
++					reg = <1>;
++					#address-cells = <1>;
++					#size-cells = <0>;
++				};
++			};
++		};
++	};
++
++	fragment@1 {
++		target = <&i2c2>;
++		__overlay__ {
++			status = "okay";
++			pinctrl-names = "default";
++			pinctrl-0 = <&i2c2m4_xfer>;
++		};
++	};
++
++	fragment@2 {
++		target = <&i2cmux1>;
++		__overlay__ {
++			status = "okay";
++		};
++	};
++
++	fragment@3 {
++		target = <&rkcif>;
++		__overlay__ {
++			status = "okay";
++		};
++	};
++
++	fragment@4 {
++		target = <&rkcif_mmu>;
++		__overlay__ {
++			status = "okay";
++		};
++	};
++
++	fragment@5 {
++		target = <&rkisp1>;
++		__overlay__ {
++			status = "okay";
++		};
++	};
++
++	fragment@6 {
++		target = <&isp1_mmu>;
++		__overlay__ {
++			status = "okay";
++		};
++	};
++
++	fragment@7 {
++		target = <&i2c_cam1>;
++		__overlay__ {
++			camera1_imx415: camera1-imx415@37 {
++				status = "okay";
++				compatible = "sony,imx415";
++				reg = <0x37>;
++				clocks = <&cru CLK_MIPI_CAMARAOUT_M1>;
++				clock-names = "xvclk";
++				pinctrl-names = "default";
++				pinctrl-0 = <&mipim1_camera1_clk>;
++				power-domains = <&power RK3588_PD_VI>;
++				rockchip,camera-module-index = <1>;
++				rockchip,camera-module-facing = "back";
++				rockchip,camera-module-name = "rpi-camera-v2";
++				rockchip,camera-module-lens-name = "default";
++
++				port {
++					camera1_imx415_out: endpoint {
++						remote-endpoint = <&csi2_dphy3_in_cam1>;
++						data-lanes = <1 2 3 4>;
++					};
++				};
++			};
++		};
++	};
++
++	fragment@8 {
++		target = <&csi2_dphy3>;
++		__overlay__ {
++			status = "okay";
++
++			ports {
++				#address-cells = <1>;
++				#size-cells = <0>;
++
++				port@0 {
++					reg = <0>;
++					#address-cells = <1>;
++					#size-cells = <0>;
++
++					csi2_dphy3_in_cam1: endpoint@1 {
++						reg = <1>;
++						remote-endpoint = <&camera1_imx415_out>;
++						data-lanes = <1 2 3 4>;
++					};
++				};
++
++				port@1 {
++					reg = <1>;
++					#address-cells = <1>;
++					#size-cells = <0>;
++
++					csi2_dphy3_out_cam1: endpoint@0 {
++						reg = <0>;
++						remote-endpoint = <&mipi4_csi2_in_cam1>;
++					};
++				};
++			};
++		};
++	};
++
++	fragment@9 {
++		target = <&csi2_dphy0_hw>;
++		__overlay__ {
++			status = "okay";
++		};
++	};
++
++	fragment@10 {
++		target = <&mipi4_csi2>;
++		__overlay__ {
++			status = "okay";
++
++			ports {
++				#address-cells = <1>;
++				#size-cells = <0>;
++
++				port@0 {
++					reg = <0>;
++					#address-cells = <1>;
++					#size-cells = <0>;
++
++					mipi4_csi2_in_cam1: endpoint@1 {
++						reg = <1>;
++						remote-endpoint = <&csi2_dphy3_out_cam1>;
++					};
++				};
++
++				port@1 {
++					reg = <1>;
++					#address-cells = <1>;
++					#size-cells = <0>;
++
++					mipi4_csi2_out_cam1: endpoint@0 {
++						reg = <0>;
++						remote-endpoint = <&rkcif_mipi_lvds4_in_cam1>;
++					};
++				};
++			};
++		};
++	};
++
++	fragment@11 {
++		target = <&rkcif_mipi_lvds4>;
++		__overlay__ {
++			status = "okay";
++
++			port {
++				rkcif_mipi_lvds4_in_cam1: endpoint {
++					remote-endpoint = <&mipi4_csi2_out_cam1>;
++				};
++			};
++		};
++	};
++
++	fragment@12 {
++		target = <&rkcif_mipi_lvds4_sditf>;
++		__overlay__ {
++			status = "okay";
++
++			port {
++				rkcif_mipi_lvds4_sditf_out: endpoint {
++					remote-endpoint = <&isp1_vir0_in_cam1>;
++				};
++			};
++		};
++	};
++
++	fragment@13 {
++		target = <&rkisp1_vir0>;
++		__overlay__ {
++			status = "okay";
++
++			port {
++				#address-cells = <1>;
++				#size-cells = <0>;
++
++				isp1_vir0_in_cam1: endpoint@0 {
++					reg = <0>;
++					remote-endpoint = <&rkcif_mipi_lvds4_sditf_out>;
++				};
++			};
++		};
++	};
++};
